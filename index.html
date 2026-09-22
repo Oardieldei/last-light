@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>Последний огонёк — Этап 1</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23ffb03a'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="game-screen">
+    <canvas id="game-canvas"></canvas>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+      <div id="hud-level"></div>
+      <div id="hud-battery">
+        <span id="hud-battery-text">Фонарь: 100/100</span>
+        <div class="battery-bar"><div id="battery-fill"></div></div>
+      </div>
+    </div>
+    <div id="hud-hint">ЛКМ / палец — удержание: движение · тап: поворот · R — уровень заново</div>
+
+    <!-- Экраны состояний -->
+    <div id="overlay-menu" class="overlay">
+      <h1 class="game-title">ПОСЛЕДНИЙ<br>ОГОНЁК</h1>
+      <p class="overlay-sub">Этап 1 · техническая основа</p>
+      <button class="btn" id="btn-start">Начать игру</button>
+      <p class="overlay-hint">Удерживай ЛКМ или палец — движение к курсору.<br>Короткий тап — поворот. Дойди до двери.</p>
+    </div>
+
+    <div id="overlay-level-complete" class="overlay hidden">
+      <h2 id="level-complete-title"></h2>
+      <button class="btn" id="btn-level-complete-next">Дальше</button>
+    </div>
+
+    <div id="overlay-level-failed" class="overlay hidden">
+      <h2 id="level-failed-title"></h2>
+      <p class="overlay-sub">Причины провала появятся на следующих этапах.</p>
+      <button class="btn" id="btn-level-failed-retry">Попробовать снова</button>
+    </div>
+
+    <div id="overlay-game-complete" class="overlay hidden">
+      <h2>Игра пройдена!</h2>
+      <p class="overlay-sub">Ты прошёл все уровни этого этапа.</p>
+      <button class="btn" id="btn-game-complete-again">Сыграть ещё раз</button>
+      <button class="btn btn-secondary" id="btn-game-complete-menu">В меню</button>
+    </div>
+  </div>
+
+  <!-- Классические скрипты (без ES-модулей: игра открывается через file://). -->
+  <script src="js/config.js"></script>
+  <script src="js/collision.js"></script>
+  <script src="js/levels.js"></script>
+  <script src="js/level.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/input.js"></script>
+  <script src="js/world.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/game.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>
