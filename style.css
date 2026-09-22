@@ -83,6 +83,7 @@ body {
 
 #hud-battery {
   text-align: right;
+  pointer-events: auto;
 }
 
 #hud-battery-text {
@@ -106,6 +107,25 @@ body {
   width: 100%;
   background: var(--accent);
   transition: width 0.2s linear; /* плавное уменьшение заряда */
+}
+
+#btn-use-battery {
+  margin-top: 6px;
+  padding: 4px 8px;
+  min-width: 58px;
+  border: 1px solid rgba(255, 209, 102, 0.45);
+  border-radius: 6px;
+  color: var(--text);
+  background: rgba(10, 15, 23, 0.72);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+#btn-use-battery:disabled {
+  opacity: 0.42;
+  cursor: default;
 }
 
 #hud-hint {
