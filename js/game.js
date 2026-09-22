@@ -22,7 +22,8 @@ class Game {
     this.level = null;
     this.player = null;
     this.charge = CONFIG.chargeMax;
-    this._hudChargeShown = -1;
+    this.batteryInventory = 0;
+    this._hudSignature = '';
 
     this.viewWidth = CONFIG.viewWidth;
     this.viewHeight = CONFIG.viewHeight;
@@ -31,6 +32,7 @@ class Game {
 
     this.onKeyDown = (e) => this.handleKey(e);
     window.addEventListener('keydown', this.onKeyDown);
+    this.ui.setBatteryHandler(() => this.useBattery());
   }
 
   // ---------- Управление состояниями ----------
@@ -54,12 +56,13 @@ class Game {
     this.level = new Level(LEVELS[index], index);
     this.player = new Player(this.level.playerStart.x, this.level.playerStart.y);
     this.charge = CONFIG.chargeMax; // новый уровень — полный заряд
-    this._hudChargeShown = -1;
+    this.batteryInventory = 0;
+    this._hudSignature = '';
     this.world.setLevel(this.level);
     this.world.follow(this.player.x, this.player.y, this.viewWidth, this.viewHeight);
     this.ui.hideAll(); // прячем оверлеи (меню, результат уровня) при загрузке любого уровня
     this.input.reset();
-    this.ui.setHUD(index + 1, LEVELS.length, this.charge);
+    this.ui.setHUD(index + 1, LEVELS.length, this.charge, this.batteryInventory);
     this.ui.showHUD(true);
   }
 
@@ -100,6 +103,14 @@ class Game {
       reason: reason || '',
       onRetry: () => this.restartLevel(),
     });
+  }
+
+  useBattery() {
+    if (this.state !== this.STATE.PLAYING ||
+        this.batteryInventory <= 0 || this.charge >= CONFIG.chargeMax) return;
+    this.batteryInventory -= 1;
+    this.charge = Math.min(CONFIG.chargeMax, this.charge + CONFIG.batteryChargeGain);
+    this._syncHUD();
   }
 
   // ---------- Обновление ----------
@@ -147,6 +158,24 @@ class Game {
     const moved = Math.hypot(player.x - prevX, player.y - prevY);
     if (moved > CONFIG.chargeMoveEpsilon) {
       this.charge = Math.max(0, this.charge - dt * CONFIG.chargeDrainPerSec);
+
+      // Батарейки подбираются автоматически, но заряд восстанавливается только
+      // после явного использования через HUD (или клавишей B).
+      for (const battery of this.level.batteries) {
+        if (!battery.collected &&
+            Math.hypot(player.x - battery.x, player.y - battery.y) <= CONFIG.batteryPickupRange) {
+          battery.collected = true;
+          this.batteryInventory += 1;
+        }
+      }
+    }
+
+    // Свеча активируется один раз и остаётся активной до перезапуска уровня.
+    for (const candle of this.level.candles) {
+      if (!candle.active &&
+          Math.hypot(player.x - candle.x, player.y - candle.y) <= CONFIG.candleActivationRadius) {
+        candle.active = true;
+      }
     }
     this._syncHUD();
 
@@ -154,6 +183,30 @@ class Game {
       this.charge = 0;
       this.failLevel('Фонарь погас');
       return;
+    }
+
+
+    // Любая причина поражения проверяется до двери: failure всегда важнее victory.
+    for (const trap of this.level.traps) {
+      if (Collision.circleRectOverlap(player.x, player.y, player.radius, trap)) {
+        this.failLevel('Вы попались');
+        return;
+      }
+    }
+
+    // Только реальная occluded-область направленного фонаря будит монстра.
+    // После активации он продолжает преследование независимо от освещения.
+    for (const monster of this.level.monsters) {
+      if (!monster.active && this.lighting.isCircleInDirectionalFlashlight(
+        this.level, player, this.charge, this.timeMs,
+        monster.x, monster.y, CONFIG.monsterVisualRadius
+      )) monster.activate();
+      monster.update(dt, this.level, player);
+      if (monster.active && Math.hypot(monster.x - player.x, monster.y - player.y) <=
+          monster.radius + player.radius) {
+        this.failLevel('Вас поймали');
+        return;
+      }
     }
 
     // Камера следует за игроком (мир -> камера, физика не меняется).
@@ -168,9 +221,12 @@ class Game {
   // Обновление HUD-заряда с порогом: не трогаем DOM каждый кадр.
   _syncHUD() {
     const shown = Math.floor(this.charge);
-    if (shown !== this._hudChargeShown) {
-      this._hudChargeShown = shown;
-      this.ui.setHUD(this.levelIndex + 1, LEVELS.length, this.charge);
+    const signature = `${shown}:${this.batteryInventory}`;
+    if (signature !== this._hudSignature) {
+      this._hudSignature = signature;
+      this.ui.setHUD(
+        this.levelIndex + 1, LEVELS.length, this.charge, this.batteryInventory
+      );
     }
   }
 
@@ -218,6 +274,10 @@ class Game {
 
       case this.STATE.PLAYING:
         if (key === 'KEYR' || key === 'R' || key === 'К') this.restartLevel();
+        else if (key === 'KEYB' || key === 'B' || key === 'И') {
+          // Одно физическое нажатие использует не более одной батарейки.
+          if (!e.repeat) this.useBattery();
+        }
         else if (key === 'ESCAPE') this.goToMenu();
         else handled = false;
         break;

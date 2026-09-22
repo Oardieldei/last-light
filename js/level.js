@@ -2,7 +2,7 @@
 // Единый для всех уровней — движок не знает об отдельных уровнях.
 //
 // Важно: данные уровня (LEVELS[i]) — неизменяемый шаблон. Всё, что меняется во время
-// прохождения (подобрана ли батарейка, активна ли свеча), живёт в объектах этого класса,
+// прохождения (ресурсы и состояние монстров), живёт в объектах этого класса,
 // созданных копированием. Поэтому restart/новый уровень всегда стартуют с чистого состояния.
 class Level {
   constructor(data, index) {
@@ -28,7 +28,7 @@ class Level {
       this.walls.push({ x: w.x, y: w.y, width: w.width, height: w.height });
     }
 
-    // Runtime-сущности Этапа 3 (копии данных + состояние прохождения).
+    // Runtime-сущности: копии данных и состояние текущей попытки.
     this.batteries = (data.batteries || []).map((b) => ({
       x: b.x, y: b.y, collected: false,
     }));
@@ -38,6 +38,7 @@ class Level {
     this.traps = (data.traps || []).map((t) => ({
       x: t.x, y: t.y, width: t.width, height: t.height,
     }));
+    this.monsters = (data.monsters || []).map((m) => new Monster(m.x, m.y));
 
     this.addBorderWalls();
   }

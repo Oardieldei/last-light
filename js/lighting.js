@@ -218,6 +218,73 @@ class Lighting {
     const dim = this.dimForCharge(charge, timeMs);
     return CONFIG.beamRange * (CONFIG.beamMinRangeFrac + (1 - CONFIG.beamMinRangeFrac) * dim);
   }
+
+  // Единственный источник geometry основного фонаря для render и gameplay-проверок.
+  directionalFlashlight(level, player, charge, timeMs) {
+    const lookAngle = Math.atan2(player.lookDirection.y, player.lookDirection.x);
+    const range = this.beamRangeForCharge(charge, timeMs);
+    return {
+      lookAngle,
+      range,
+      points: this.visibilityPolygon(
+        level, player.x, player.y, lookAngle, CONFIG.beamFovDeg, range
+      ),
+    };
+  }
+
+  pointInPolygon(x, y, polygon) {
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const a = polygon[j];
+      const b = polygon[i];
+      const cross = (x - a.x) * (b.y - a.y) - (y - a.y) * (b.x - a.x);
+      if (Math.abs(cross) < 1e-7 &&
+          x >= Math.min(a.x, b.x) - 1e-7 && x <= Math.max(a.x, b.x) + 1e-7 &&
+          y >= Math.min(a.y, b.y) - 1e-7 && y <= Math.max(a.y, b.y) + 1e-7) return true;
+      const crosses = ((b.y > y) !== (a.y > y)) &&
+        x < (a.x - b.x) * (y - b.y) / (a.y - b.y) + b.x;
+      if (crosses) inside = !inside;
+    }
+    return inside;
+  }
+
+  circleIntersectsPolygon(x, y, radius, polygon) {
+    if (polygon.length < 3) return false;
+    if (this.pointInPolygon(x, y, polygon)) return true;
+    const radiusSq = radius * radius;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const a = polygon[j];
+      const b = polygon[i];
+      const dx = b.x - a.x;
+      const dy = b.y - a.y;
+      const lengthSq = dx * dx + dy * dy;
+      const t = lengthSq > 0
+        ? Math.max(0, Math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / lengthSq))
+        : 0;
+      const px = a.x + dx * t;
+      const py = a.y + dy * t;
+      if ((x - px) ** 2 + (y - py) ** 2 <= radiusSq) return true;
+    }
+    return false;
+  }
+
+  isPointInDirectionalFlashlight(level, player, charge, timeMs, x, y) {
+    if (charge <= 0) return false;
+    const beam = this.directionalFlashlight(level, player, charge, timeMs);
+    return this.pointInPolygon(x, y, [
+      { x: player.x, y: player.y },
+      ...beam.points,
+    ]);
+  }
+
+  isCircleInDirectionalFlashlight(level, player, charge, timeMs, x, y, radius) {
+    if (charge <= 0) return false;
+    const beam = this.directionalFlashlight(level, player, charge, timeMs);
+    return this.circleIntersectsPolygon(x, y, radius, [
+      { x: player.x, y: player.y },
+      ...beam.points,
+    ]);
+  }
 // ---------------------------------------------------------------- отрисовка
 
   // world -> logical viewport (геометрия 1:1, сдвиг на камеру).
@@ -231,15 +298,28 @@ class Lighting {
 
     const localRange = CONFIG.localLightRange;
     const localAlpha = CONFIG.localLightMaxAlpha * (0.72 + 0.28 * dim);
-    const beamRange = this.beamRangeForCharge(charge, timeMs);
+    const flashlight = this.directionalFlashlight(level, player, charge, timeMs);
+    const beamRange = flashlight.range;
     const beamAlpha = 0.40 + 0.60 * dim;
 
     const ox = player.x, oy = player.y;
-    const lookAngle = Math.atan2(player.lookDirection.y, player.lookDirection.x);
+    const lookAngle = flashlight.lookAngle;
 
     // Геометрия света (в мировых координатах — стабильна при resize/DPR).
     const localPoly = this.visibilityPolygon(level, ox, oy, lookAngle, 360, localRange);
-    const beamPoly = this.visibilityPolygon(level, ox, oy, lookAngle, CONFIG.beamFovDeg, beamRange);
+    const beamPoly = flashlight.points;
+    // Неактивные свечи не запускают ray casting. Каждый активный источник использует
+    // ту же visibility geometry, что и локальный свет игрока.
+    const candleLights = [];
+    for (const candle of level.candles) {
+      if (!candle.active) continue;
+      candleLights.push({
+        candle,
+        poly: this.visibilityPolygon(
+          level, candle.x, candle.y, 0, 360, CONFIG.candleLightRange
+        ),
+      });
+    }
 
     const mask = this.mask;
     const mc = this.maskCtx;
@@ -255,6 +335,12 @@ class Lighting {
     mc.globalCompositeOperation = 'destination-out';
     this.fillLocalLight(mc, localPoly, camera, viewW, viewH, ox, oy, localRange, localAlpha);
     this.fillBeam(mc, beamPoly, camera, viewW, viewH, ox, oy, beamRange, beamAlpha);
+    for (const light of candleLights) {
+      this.fillLocalLight(
+        mc, light.poly, camera, viewW, viewH,
+        light.candle.x, light.candle.y, CONFIG.candleLightRange, CONFIG.candleLightAlpha
+      );
+    }
 
     // 3) Мягкость: затухание луча к дальней границе (внутри полигона луча).
     mc.globalCompositeOperation = 'source-over';
@@ -266,6 +352,11 @@ class Lighting {
     ctx.globalCompositeOperation = 'source-over';
     ctx.drawImage(mask, 0, 0, viewW, viewH);
     ctx.restore();
+
+    // Лёгкий тёплый оттенок рисуется только внутри того же occluded polygon.
+    for (const light of candleLights) {
+      this.drawCandleGlow(ctx, light.poly, camera, viewW, viewH, light.candle);
+    }
 
     if (DEBUG_LIGHTING) this.debugDraw(ctx, level, camera, viewW, viewH, ox, oy, lookAngle, localPoly, beamPoly, beamRange);
   }
@@ -296,6 +387,27 @@ class Lighting {
     mc.closePath();
     mc.fillStyle = `rgba(0,0,0,${alpha.toFixed(3)})`;
     mc.fill();
+  }
+
+  drawCandleGlow(ctx, poly, cam, viewW, viewH, candle) {
+    if (poly.length < 3) return;
+    const c = this.toViewport(candle.x, candle.y, cam, viewW, viewH);
+    ctx.save();
+    this.beginPolygonPath(ctx, poly, cam, viewW, viewH, true);
+    ctx.clip();
+    ctx.globalCompositeOperation = 'lighter';
+    const grad = ctx.createRadialGradient(
+      c.x, c.y, 0, c.x, c.y, CONFIG.candleLightRange
+    );
+    grad.addColorStop(0, `rgba(255,176,70,${CONFIG.candleGlowAlpha})`);
+    grad.addColorStop(0.55, `rgba(255,132,45,${(CONFIG.candleGlowAlpha * 0.38).toFixed(3)})`);
+    grad.addColorStop(1, 'rgba(255,110,35,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(
+      c.x - CONFIG.candleLightRange, c.y - CONFIG.candleLightRange,
+      CONFIG.candleLightRange * 2, CONFIG.candleLightRange * 2
+    );
+    ctx.restore();
   }
 
   // Градиентное затухание луча по дальности. Рисуется поверх маски,

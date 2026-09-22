@@ -68,4 +68,14 @@ const CONFIG = {
   // Визуальные размеры объектов (world px).
   batteryVisualRadius: 7,
   candleVisualRadius: 5,
+
+  // ---------- Этап 4: базовый монстр ----------
+  monsterRadius: 10,
+  monsterVisualRadius: 11,
+  monsterSpeed: 150,
+  // Маршрут обновляется периодически и при заметном перемещении цели.
+  monsterRepathSec: 0.30,
+  monsterRepathDistance: 24,
+  // Дополнительный зазор узлов visibility graph от углов стен.
+  monsterPathPadding: 2,
 };

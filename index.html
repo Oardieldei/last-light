@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
-  <title>Последний огонёк — Этап 1</title>
+  <title>Последний огонёк</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='%23ffb03a'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -17,6 +17,7 @@
       <div id="hud-battery">
         <span id="hud-battery-text">Фонарь: 100/100</span>
         <div class="battery-bar"><div id="battery-fill"></div></div>
+        <button id="btn-use-battery" type="button" disabled aria-label="Использовать батарейку">🔋 × 0</button>
       </div>
     </div>
     <div id="hud-hint">ЛКМ / палец — удержание: движение · тап: поворот · R — уровень заново</div>
@@ -24,7 +25,7 @@
     <!-- Экраны состояний -->
     <div id="overlay-menu" class="overlay">
       <h1 class="game-title">ПОСЛЕДНИЙ<br>ОГОНЁК</h1>
-      <p class="overlay-sub">Этап 1 · техническая основа</p>
+      <p class="overlay-sub">Сбереги свет и найди выход</p>
       <button class="btn" id="btn-start">Начать игру</button>
       <p class="overlay-hint">Удерживай ЛКМ или палец — движение к курсору.<br>Короткий тап — поворот. Дойди до двери.</p>
     </div>
@@ -52,6 +53,7 @@
   <script src="js/config.js"></script>
   <script src="js/collision.js"></script>
   <script src="js/levels.js"></script>
+  <script src="js/monster.js"></script>
   <script src="js/level.js"></script>
   <script src="js/player.js"></script>
   <script src="js/input.js"></script>
