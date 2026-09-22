@@ -4,7 +4,7 @@
 class World {
   constructor() {
     this.level = null;
-    this.camera = { x: 0, y: 0 };
+    this.camera = { x: 0, y: 0, zoom: CONFIG.cameraZoom };
   }
 
   setLevel(level) {
@@ -15,8 +15,10 @@ class World {
   // а если мир меньше viewport по оси — центрируется на нём.
   follow(targetX, targetY, viewW, viewH) {
     const l = this.level;
-    this.camera.x = this.clampCentered(viewW / 2, l.width - viewW / 2, targetX);
-    this.camera.y = this.clampCentered(viewH / 2, l.height - viewH / 2, targetY);
+    const visibleW = viewW / this.camera.zoom;
+    const visibleH = viewH / this.camera.zoom;
+    this.camera.x = this.clampCentered(visibleW / 2, l.width - visibleW / 2, targetX);
+    this.camera.y = this.clampCentered(visibleH / 2, l.height - visibleH / 2, targetY);
   }
 
   clampCentered(min, max, value) {
@@ -29,8 +31,8 @@ class World {
   // Логические координаты viewport -> мировые координаты (для ввода).
   logicalToWorld(lx, ly, viewW, viewH) {
     return {
-      x: this.camera.x + lx - viewW / 2,
-      y: this.camera.y + ly - viewH / 2,
+      x: this.camera.x + (lx - viewW / 2) / this.camera.zoom,
+      y: this.camera.y + (ly - viewH / 2) / this.camera.zoom,
     };
   }
 
@@ -45,7 +47,9 @@ class World {
     const cam = this.camera;
 
     ctx.save();
-    ctx.translate(viewW / 2 - cam.x, viewH / 2 - cam.y);
+    ctx.translate(viewW / 2, viewH / 2);
+    ctx.scale(cam.zoom, cam.zoom);
+    ctx.translate(-cam.x, -cam.y);
 
     // Пол уровня.
     ctx.fillStyle = '#0d141d';
@@ -81,6 +85,8 @@ class World {
     for (const b of level.batteries) {
       if (!b.collected) this.drawBattery(ctx, b, timeMs);
     }
+
+    for (const lens of level.lenses) this.drawLens(ctx, lens);
 
     // Монстры остаются world objects и затемняются общей Lighting-маской.
     for (const monster of level.monsters) this.drawMonster(ctx, monster, timeMs);
@@ -263,6 +269,27 @@ class World {
       ctx.arc(sx * r * 0.35, -r * 0.18, 1.8, 0, Math.PI * 2);
       ctx.fill();
     }
+    ctx.restore();
+  }
+
+  drawLens(ctx, lens) {
+    const r = lens.radius;
+    ctx.save();
+    ctx.translate(lens.x, lens.y);
+    ctx.rotate(lens.angle);
+    ctx.fillStyle = 'rgba(92, 202, 235, 0.35)';
+    ctx.strokeStyle = '#9cecff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, r * 0.38, r, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(210, 248, 255, 0.8)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.75, 0);
+    ctx.lineTo(r * 0.75, 0);
+    ctx.stroke();
     ctx.restore();
   }
 }
