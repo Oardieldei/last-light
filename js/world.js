@@ -148,4 +148,94 @@ class World {
     ctx.lineCap = 'round';
     ctx.stroke();
   }
+
+  drawBattery(ctx, battery, timeMs) {
+    const r = CONFIG.batteryVisualRadius;
+    const pulse = 0.82 + 0.18 * Math.sin(timeMs / 260);
+    ctx.save();
+    ctx.translate(battery.x, battery.y);
+
+    ctx.fillStyle = `rgba(255, 210, 70, ${(0.12 * pulse).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(0, 0, r + 5, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = '#e8b83f';
+    ctx.strokeStyle = '#6f5317';
+    ctx.lineWidth = 1.5;
+    ctx.fillRect(-r, -r * 0.72, r * 2, r * 1.44);
+    ctx.strokeRect(-r, -r * 0.72, r * 2, r * 1.44);
+    ctx.fillStyle = '#f7d568';
+    ctx.fillRect(r, -r * 0.28, 2.5, r * 0.56);
+
+    ctx.strokeStyle = '#5c4518';
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.58, 0);
+    ctx.lineTo(-r * 0.16, 0);
+    ctx.moveTo(r * 0.22, 0);
+    ctx.lineTo(r * 0.66, 0);
+    ctx.moveTo(r * 0.44, -r * 0.22);
+    ctx.lineTo(r * 0.44, r * 0.22);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  drawCandle(ctx, candle, timeMs) {
+    const r = CONFIG.candleVisualRadius;
+    ctx.save();
+    ctx.translate(candle.x, candle.y);
+
+    ctx.fillStyle = candle.active ? '#f1d6a0' : '#8b8274';
+    ctx.strokeStyle = candle.active ? '#8d642d' : '#48443f';
+    ctx.lineWidth = 1;
+    ctx.fillRect(-r, -r, r * 2, r * 2.5);
+    ctx.strokeRect(-r, -r, r * 2, r * 2.5);
+
+    ctx.strokeStyle = '#33281c';
+    ctx.beginPath();
+    ctx.moveTo(0, -r);
+    ctx.lineTo(0, -r - 3);
+    ctx.stroke();
+
+    if (candle.active) {
+      const flicker = Math.sin(timeMs * 0.018 + candle.x * 0.1) * 0.7;
+      ctx.fillStyle = 'rgba(255, 180, 45, 0.18)';
+      ctx.beginPath();
+      ctx.arc(0, -r - 5, r + 4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ffbd3e';
+      ctx.beginPath();
+      ctx.ellipse(flicker * 0.35, -r - 5, 2.5, 5 + flicker, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff1a8';
+      ctx.beginPath();
+      ctx.ellipse(0, -r - 4.5, 1, 2.6, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  drawTrap(ctx, trap) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(105, 38, 38, 0.38)';
+    ctx.fillRect(trap.x, trap.y, trap.width, trap.height);
+    ctx.strokeStyle = '#8f4545';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(trap.x + 0.5, trap.y + 0.5, trap.width - 1, trap.height - 1);
+
+    const spikeWidth = 10;
+    ctx.fillStyle = '#b8aaa0';
+    ctx.strokeStyle = '#514945';
+    for (let x = trap.x + 2; x < trap.x + trap.width - 2; x += spikeWidth) {
+      ctx.beginPath();
+      ctx.moveTo(x, trap.y + trap.height - 3);
+      ctx.lineTo(Math.min(x + spikeWidth / 2, trap.x + trap.width - 2), trap.y + 4);
+      ctx.lineTo(Math.min(x + spikeWidth, trap.x + trap.width - 2), trap.y + trap.height - 3);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }

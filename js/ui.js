@@ -8,6 +8,17 @@ class UI {
     this.hudLevel = this.el('hud-level');
     this.hudBatteryText = this.el('hud-battery-text');
     this.batteryFill = this.el('battery-fill');
+    this.btnUseBattery = this.el('btn-use-battery');
+    this.onUseBattery = null;
+
+    // HUD находится поверх Canvas. Явно останавливаем pointer events, чтобы tap по
+    // батарейке никогда не становился игровым взглядом или удержанием движения.
+    this.btnUseBattery.addEventListener('pointerdown', (e) => e.stopPropagation());
+    this.btnUseBattery.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.btnUseBattery.blur();
+      if (this.onUseBattery) this.onUseBattery();
+    });
 
     this.overlays = {
       menu: this.el('overlay-menu'),
@@ -31,11 +42,17 @@ class UI {
     };
   }
 
-  setHUD(levelNumber, totalLevels, charge) {
+  setHUD(levelNumber, totalLevels, charge, batteryInventory = 0) {
     this.hudLevel.textContent = `Уровень ${levelNumber} / ${totalLevels}`;
     const clamped = Math.max(0, Math.min(CONFIG.chargeMax, charge));
     this.hudBatteryText.textContent = `Фонарь: ${Math.round(clamped)}/${CONFIG.chargeMax}`;
     this.batteryFill.style.width = (clamped / CONFIG.chargeMax) * 100 + '%';
+    this.btnUseBattery.textContent = `🔋 × ${batteryInventory}`;
+    this.btnUseBattery.disabled = batteryInventory <= 0 || clamped >= CONFIG.chargeMax;
+  }
+
+  setBatteryHandler(onUseBattery) {
+    this.onUseBattery = onUseBattery;
   }
 
   showHUD(show) {
