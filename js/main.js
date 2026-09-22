@@ -7,7 +7,8 @@
   const ui = new UI(screen);
   const input = new Input(canvas);
   const world = new World();
-  const game = new Game({ ctx, input, ui, world });
+  const lighting = new Lighting();
+  const game = new Game({ ctx, input, ui, world, lighting });
 
   // Физический размер канваса = логическое разрешение * DPR.
   // Отрисовка всегда идёт в логических координатах через ctx.setTransform,

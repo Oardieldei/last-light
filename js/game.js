@@ -1,11 +1,13 @@
-// Игровой движок: состояния, игровой цикл, уровни, победа/поражение, HUD.
-// Поток данных: input -> game state -> update -> render (мир отрисовывает World).
+// Игровой движок: состояния, игровой цикл, уровни, победа/поражение, заряд, HUD.
+// Поток данных: input -> game state -> update -> render.
+// Рендер: World рисует мир, Lighting кладёт darkness-маску, HUD — DOM поверх.
 class Game {
-  constructor({ ctx, input, ui, world }) {
+  constructor({ ctx, input, ui, world, lighting }) {
     this.ctx = ctx;
     this.input = input;
     this.ui = ui;
     this.world = world;
+    this.lighting = lighting;
 
     this.STATE = {
       MENU: 'MENU',
@@ -19,7 +21,8 @@ class Game {
     this.levelIndex = 0;
     this.level = null;
     this.player = null;
-    this.battery = CONFIG.batteryMax; // тестовая величина, фонарь ещё не реализован
+    this.charge = CONFIG.chargeMax;
+    this._hudChargeShown = -1;
 
     this.viewWidth = CONFIG.viewWidth;
     this.viewHeight = CONFIG.viewHeight;
@@ -50,11 +53,13 @@ class Game {
     this.levelIndex = index;
     this.level = new Level(LEVELS[index], index);
     this.player = new Player(this.level.playerStart.x, this.level.playerStart.y);
+    this.charge = CONFIG.chargeMax; // новый уровень — полный заряд
+    this._hudChargeShown = -1;
     this.world.setLevel(this.level);
     this.world.follow(this.player.x, this.player.y, this.viewWidth, this.viewHeight);
     this.ui.hideAll(); // прячем оверлеи (меню, результат уровня) при загрузке любого уровня
     this.input.reset();
-    this.ui.setHUD(index + 1, LEVELS.length, this.battery);
+    this.ui.setHUD(index + 1, LEVELS.length, this.charge);
     this.ui.showHUD(true);
   }
 
@@ -87,11 +92,12 @@ class Game {
     });
   }
 
-  failLevel() {
-    // Технически подготовлено к следующим этапам (травмы, ловушки и т.п.).
+  failLevel(reason) {
+    // Этап 1: травмы/ловушки. Этап 2: «Фонарь погас» (заряд 0).
     this.setState(this.STATE.LEVEL_FAILED);
     this.ui.showLevelFailed({
       number: this.levelIndex + 1,
+      reason: reason || '',
       onRetry: () => this.restartLevel(),
     });
   }
@@ -131,7 +137,24 @@ class Game {
       player.setMovement(0, 0);
     }
 
+    // Замер фактического перемещения (в мировых координатах, до physics).
+    const prevX = player.x;
+    const prevY = player.y;
     player.update(dt, this.level.walls);
+
+    // Заряд: расходуется ТОЛЬКО при фактическом перемещении (по dt, не по FPS).
+    // Если игрок упёрся в стену и не сдвинулся — заряд не тратится.
+    const moved = Math.hypot(player.x - prevX, player.y - prevY);
+    if (moved > CONFIG.chargeMoveEpsilon) {
+      this.charge = Math.max(0, this.charge - dt * CONFIG.chargeDrainPerSec);
+    }
+    this._syncHUD();
+
+    if (this.charge <= 0) {
+      this.charge = 0;
+      this.failLevel('Фонарь погас');
+      return;
+    }
 
     // Камера следует за игроком (мир -> камера, физика не меняется).
     world.follow(player.x, player.y, this.viewWidth, this.viewHeight);
@@ -142,8 +165,22 @@ class Game {
     }
   }
 
+  // Обновление HUD-заряда с порогом: не трогаем DOM каждый кадр.
+  _syncHUD() {
+    const shown = Math.floor(this.charge);
+    if (shown !== this._hudChargeShown) {
+      this._hudChargeShown = shown;
+      this.ui.setHUD(this.levelIndex + 1, LEVELS.length, this.charge);
+    }
+  }
+
   render() {
     this.world.render(this.ctx, this.player, this.viewWidth, this.viewHeight, this.timeMs);
+    // Darkness-маска поверх мира. HUD — DOM, не затемняется.
+    this.lighting.render(
+      this.ctx, this.level, this.player, this.world.camera,
+      this.charge, this.viewWidth, this.viewHeight, this.timeMs
+    );
   }
 
   // ---------- Игровой цикл ----------

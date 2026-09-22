@@ -13,10 +13,14 @@ class Player {
   }
 
   // Задать направление взгляда на мировую точку.
+  // Вырожденный случай (точка совпала с игроком — например, курсор ровно в центре
+  // экрана) игнорируется: иначе lookDirection обратился бы в (0,0), а фонарь
+  // «прыгнул» бы на угол 0 и там застрял до следующего движения ввода.
   setLookAtWorld(wx, wy) {
     const dx = wx - this.x;
     const dy = wy - this.y;
-    const len = Math.hypot(dx, dy) || 1;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) return;
     this.lookDirection.x = dx / len;
     this.lookDirection.y = dy / len;
   }

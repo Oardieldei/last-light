@@ -68,8 +68,19 @@ class World {
     // Стены (включая добавленные границы мира).
     for (const w of level.walls) this.drawWall(ctx, w);
 
+    // Ловушки — «пол» уровня, рисуются под остальными объектами.
+    for (const t of level.traps) this.drawTrap(ctx, t);
+
     // Дверь.
     this.drawDoor(ctx, level.door, timeMs);
+
+    // Свечи (неактивные — просто объект; активные — с пламенем).
+    for (const c of level.candles) this.drawCandle(ctx, c, timeMs);
+
+    // Батарейки — только не подобранные.
+    for (const b of level.batteries) {
+      if (!b.collected) this.drawBattery(ctx, b, timeMs);
+    }
 
     // Игрок.
     this.drawPlayer(ctx, player);

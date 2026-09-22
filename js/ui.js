@@ -31,11 +31,11 @@ class UI {
     };
   }
 
-  setHUD(levelNumber, totalLevels, battery) {
+  setHUD(levelNumber, totalLevels, charge) {
     this.hudLevel.textContent = `Уровень ${levelNumber} / ${totalLevels}`;
-    const clamped = Math.max(0, Math.min(CONFIG.batteryMax, battery));
-    this.hudBatteryText.textContent = `Фонарь: ${clamped}/${CONFIG.batteryMax}`;
-    this.batteryFill.style.width = (clamped / CONFIG.batteryMax) * 100 + '%';
+    const clamped = Math.max(0, Math.min(CONFIG.chargeMax, charge));
+    this.hudBatteryText.textContent = `Фонарь: ${Math.round(clamped)}/${CONFIG.chargeMax}`;
+    this.batteryFill.style.width = (clamped / CONFIG.chargeMax) * 100 + '%';
   }
 
   showHUD(show) {
@@ -62,10 +62,12 @@ class UI {
     this._wire(this.btnLevelCompleteNext, onNext);
   }
 
-  showLevelFailed({ number, onRetry }) {
+  showLevelFailed({ number, reason, onRetry }) {
     this.hideAll();
     this.showHUD(true);
     this.el('level-failed-title').textContent = `Уровень ${number}: провал`;
+    this.el('level-failed-reason').textContent =
+      (reason && reason.length) ? reason : 'Причины провала появятся на следующих этапах.';
     this.overlays.levelFailed.classList.remove('hidden');
     this._wire(this.btnLevelFailedRetry, onRetry);
   }
