@@ -57,11 +57,15 @@ const CONFIG = {
   // ---------- Этап 5: линза ----------
   lensVisualRadius: 12,
   // Допустимое отклонение входящего луча от двусторонней оптической оси.
-  lensAxisToleranceDeg: 16,
-  lensSecondaryRange: 520,
-  lensSecondaryFovDeg: 34,
-  lensSecondaryAlpha: 0.88,
-  lensSecondaryFade: 0.50,
+  // ±45° оставляет широкий casual-сектор, но отсекает почти боковое попадание.
+  lensAxisToleranceDeg: 45,
+  // Secondary light усиливается по мере приближения игрока к линзе.
+  lensSecondaryMinRange: 380,
+  lensSecondaryRange: 620,
+  lensSecondaryFovDeg: 100,
+  lensSecondaryMinAlpha: 0.48,
+  lensSecondaryMaxAlpha: 0.90,
+  lensSecondaryFade: 0.68,
 
   // ---------- Этап 3: ресурсы и интерактивные объекты ----------
   // Сколько заряда восстанавливает одна батарейка.

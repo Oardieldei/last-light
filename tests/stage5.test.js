@@ -92,8 +92,12 @@ function secondaryFor(lighting, level, player, charge = CONFIG.chargeMax) {
   assert.strictEqual(lights.length, 1);
   assert(Math.cos(lights[0].angle) < -0.99);
 
+  // Заметное смещение (около 27° от оси) входит в широкий activation sector.
   assert.strictEqual(secondaryFor(lighting, level,
-    { x: 300, y: 400, lookDirection: { x: 1, y: 1 } }).length, 0);
+    { x: 300, y: 400, lookDirection: { x: 1, y: 0.5 } }).length, 1);
+  // Почти боковое положение (около 70°) по-прежнему отклоняется.
+  assert.strictEqual(secondaryFor(lighting, level,
+    { x: 465, y: 404, lookDirection: { x: 35, y: 96 } }).length, 0);
   assert.strictEqual(secondaryFor(lighting, level,
     { x: 100, y: 500, lookDirection: { x: 1, y: 0 } }).length, 0);
   assert.strictEqual(secondaryFor(lighting, level,
@@ -111,6 +115,28 @@ function secondaryFor(lighting, level, player, charge = CONFIG.chargeMax) {
   ]);
   assert.strictEqual(secondaryFor(lighting, level,
     { x: 300, y: 500, lookDirection: { x: 1, y: 0 } }).length, 1);
+}
+
+// Distance response is smooth: near lenses produce a longer and brighter diffuse
+// field, while maximum-distance activation remains useful.
+{
+  const lighting = new Lighting();
+  const level = levelWith([], [{
+    x: 500, y: 500, angle: 0, radius: 12,
+    range: CONFIG.lensSecondaryRange, fovDeg: CONFIG.lensSecondaryFovDeg,
+  }]);
+  const near = secondaryFor(lighting, level,
+    { x: 440, y: 500, lookDirection: { x: 1, y: 0 } })[0];
+  const far = secondaryFor(lighting, level,
+    { x: 220, y: 500, lookDirection: { x: 1, y: 0 } })[0];
+  assert(near && far);
+  assert(near.range > far.range);
+  assert(near.alpha > far.alpha);
+  assert(near.strength > far.strength);
+  assert(far.range >= CONFIG.lensSecondaryMinRange);
+  assert(far.alpha >= CONFIG.lensSecondaryMinAlpha);
+  assert.strictEqual(near.layers.length, 3);
+  assert(near.points.length >= 2);
 }
 
 // Regression: the gameplay aperture must match the visibly rendered lens. At 200
@@ -136,6 +162,20 @@ function secondaryFor(lighting, level, player, charge = CONFIG.chargeMax) {
     { x: 300, y: 500, lookDirection: { x: 1, y: 0 } });
   assert(light);
   assert(light.points.every((point) => point.x <= 503 + 1e-6));
+}
+
+// A full-width blocker also clips every layer of the new 100° diffuse field.
+{
+  const lighting = new Lighting();
+  const level = levelWith([{ x: 600, y: 20, width: 10, height: 960 }], [{
+    x: 500, y: 500, angle: 0, radius: 12,
+    range: CONFIG.lensSecondaryRange, fovDeg: CONFIG.lensSecondaryFovDeg,
+  }]);
+  const [light] = secondaryFor(lighting, level,
+    { x: 300, y: 500, lookDirection: { x: 1, y: 0 } });
+  assert(light);
+  assert(light.layers.every((layer) =>
+    layer.points.every((point) => point.x <= 610 + 1e-6)));
 }
 
 // Real campaign regression: tutorial lenses and representative late lenses activate
@@ -191,6 +231,15 @@ function secondaryFor(lighting, level, player, charge = CONFIG.chargeMax) {
     };
     assert.strictEqual(secondaryFor(lighting, level, sidePlayer).length, 0,
       `campaign level ${number}: side incidence must not activate lens`);
+
+    const offsetAngle = lens.angle + 35 * Math.PI / 180;
+    const offsetPlayer = {
+      x: lens.x - Math.cos(offsetAngle) * 160,
+      y: lens.y - Math.sin(offsetAngle) * 160,
+      lookDirection: { x: Math.cos(offsetAngle), y: Math.sin(offsetAngle) },
+    };
+    assert.strictEqual(secondaryFor(lighting, level, offsetPlayer).length, 1,
+      `campaign level ${number}: broad off-axis approach must remain usable`);
   }
 
   // A lens is not cover: move inside normal primary range on level 15 and the monster
@@ -208,6 +257,20 @@ function secondaryFor(lighting, level, player, charge = CONFIG.chargeMax) {
     level15, closePlayer, CONFIG.chargeMax, 0,
     monster.x, monster.y, CONFIG.monsterVisualRadius
   ), true, 'campaign lens must not shield a monster from direct primary light');
+
+  const scoutingPlayer = {
+    x: lens.x - axis.x * 160,
+    y: lens.y - axis.y * 160,
+    lookDirection: axis,
+  };
+  const [scoutingLight] = secondaryFor(lighting, level15, scoutingPlayer);
+  assert(lighting.pointInPolygon(monster.x, monster.y, [
+    { x: scoutingLight.ox, y: scoutingLight.oy }, ...scoutingLight.points,
+  ]), 'level 15 monster must be visible in secondary light');
+  assert.strictEqual(lighting.isCircleInDirectionalFlashlight(
+    level15, scoutingPlayer, CONFIG.chargeMax, 0,
+    monster.x, monster.y, CONFIG.monsterVisualRadius
+  ), false, 'secondary-only monster must not be a primary activation hit');
 }
 
 // Level templates/runtime copies are independent and carry no activation state.

@@ -310,13 +310,34 @@ class Lighting {
       const ax = Math.cos(lens.angle), ay = Math.sin(lens.angle);
       const sign = (lens.x - player.x) * ax + (lens.y - player.y) * ay >= 0 ? 1 : -1;
       const angle = lens.angle + (sign < 0 ? Math.PI : 0);
+      const distance = Math.hypot(lens.x - player.x, lens.y - player.y);
+      // На фактической границе primary range остаётся минимально полезный эффект;
+      // возле линзы линейная интерполяция плавно даёт максимум без порогового скачка.
+      const strength = 1 - Math.max(0, Math.min(1, distance / flashlight.range));
+      const minRange = Math.min(CONFIG.lensSecondaryMinRange, lens.range);
+      const range = minRange + (lens.range - minRange) * strength;
+      const alpha = CONFIG.lensSecondaryMinAlpha +
+        (CONFIG.lensSecondaryMaxAlpha - CONFIG.lensSecondaryMinAlpha) * strength;
       // Старт строго в центре линзы: заметный offset мог перенести origin за
       // тонкую/близкую стену и тем самым позволить secondary light перепрыгнуть её.
       const ox = lens.x;
       const oy = lens.y;
+      // Несколько широких вложенных occluded-вееров дают рассеянное пятно с мягче
+      // читаемыми краями вместо второго узкого flashlight cone.
+      const layerDefs = [
+        { fovScale: 1, alphaScale: 0.30 },
+        { fovScale: 0.72, alphaScale: 0.42 },
+        { fovScale: 0.45, alphaScale: 0.62 },
+      ];
+      const layers = layerDefs.map((layer) => ({
+        alphaScale: layer.alphaScale,
+        points: this.visibilityPolygon(
+          level, ox, oy, angle, lens.fovDeg * layer.fovScale, range
+        ),
+      }));
       lights.push({
-        lens, ox, oy, angle, range: lens.range,
-        points: this.visibilityPolygon(level, ox, oy, angle, lens.fovDeg, lens.range),
+        lens, ox, oy, angle, range, alpha, strength, layers,
+        points: layers[0].points,
       });
     }
     return lights;
@@ -376,8 +397,11 @@ class Lighting {
     this.fillLocalLight(mc, localPoly, camera, viewW, viewH, ox, oy, localRange, localAlpha);
     this.fillBeam(mc, beamPoly, camera, viewW, viewH, ox, oy, beamRange, beamAlpha);
     for (const light of lensLights) {
-      this.fillBeam(mc, light.points, camera, viewW, viewH,
-        light.ox, light.oy, light.range, CONFIG.lensSecondaryAlpha * dim);
+      for (const layer of light.layers) {
+        this.fillBeam(mc, layer.points, camera, viewW, viewH,
+          light.ox, light.oy, light.range,
+          light.alpha * layer.alphaScale * dim);
+      }
     }
     for (const light of candleLights) {
       this.fillLocalLight(
