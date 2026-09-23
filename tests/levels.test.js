@@ -12,6 +12,9 @@ const CONFIG = vm.runInContext('CONFIG', context);
 const LEVELS = vm.runInContext('LEVELS', context);
 
 assert.strictEqual(LEVELS.length, 30, 'campaign must contain exactly 30 levels');
+assert.strictEqual(CONFIG.beamRange, 300, 'campaign is balanced for a 300-unit primary beam');
+assert.strictEqual(CONFIG.chargeDrainPerSec, 2.75,
+  'dense campaign battery routes are balanced for 2.75 charge/sec');
 assert.deepStrictEqual(Array.from(LEVELS, (level) => level.name), [
   'Первый свет', 'Ориентир', 'Запас света', 'Осторожный шаг',
   'Кто-то в темноте', 'Взгляд дальше', 'Два пути', 'Безопасный обход',
@@ -88,21 +91,32 @@ function validateReachability(level, targets) {
 }
 
 const routeLengths = [];
+const areas = [];
+const doorDirectionSectors = new Set();
 LEVELS.forEach((level, index) => {
   const label = `level ${index + 1} (${level.name})`;
-  assert(level.width >= 1500 && level.height >= 2200, `${label}: map too small`);
-  assert(level.width <= 2700 && level.height <= 3700, `${label}: map unexpectedly huge`);
+  assert(level.width >= 1200 && level.height >= 1800, `${label}: map too small`);
+  assert(level.width <= 2200 && level.height <= 2900, `${label}: map unexpectedly huge`);
   assert(level.playerStart.x > 20 && level.playerStart.x < level.width - 20 &&
     level.playerStart.y > 20 && level.playerStart.y < level.height - 20, `${label}: start out of bounds`);
   assert(level.door.x >= 20 && level.door.y >= 20 &&
     level.door.x + level.door.width <= level.width - 20 &&
     level.door.y + level.door.height <= level.height - 20, `${label}: door out of bounds`);
   assert(Math.hypot(level.playerStart.x - (level.door.x + level.door.width / 2),
-    level.playerStart.y - (level.door.y + level.door.height / 2)) > 1200,
+    level.playerStart.y - (level.door.y + level.door.height / 2)) > 700,
   `${label}: start and door too close`);
   assert(level.monsters.length <= 3 && level.lenses.length <= 3 &&
     level.batteries.length <= 3 && level.candles.length <= 4 && level.traps.length <= 5,
   `${label}: object density exceeds campaign limits`);
+  const interactiveCount = level.batteries.length + level.candles.length +
+    level.traps.length + level.monsters.length + level.lenses.length;
+  const contentWeight = level.walls.length + interactiveCount * 2;
+  assert(level.width * level.height / contentWeight <= 900000,
+    `${label}: too much floor area for its gameplay content`);
+  areas.push(level.width * level.height);
+  const doorDx = level.door.x + level.door.width / 2 - level.playerStart.x;
+  const doorDy = level.door.y + level.door.height / 2 - level.playerStart.y;
+  doorDirectionSectors.add(Math.round(Math.atan2(doorDy, doorDx) / (Math.PI / 4)));
 
   const points = [
     { ...level.playerStart, kind: 'start', pad: CONFIG.playerRadius },
@@ -148,8 +162,14 @@ LEVELS.forEach((level, index) => {
   assert(routeLength > 0, `${label}: door unreachable`);
   routeLengths.push(routeLength);
 });
+const average = (items) => items.reduce((sum, value) => sum + value, 0) / items.length;
+assert(average(areas.slice(0, 10)) < average(areas.slice(10, 20)) &&
+  average(areas.slice(10, 20)) < average(areas.slice(20)),
+'map area must grow with campaign content tiers');
+assert(doorDirectionSectors.size >= 6,
+  'start-to-door directions need broad campaign variety');
 
-// Full charge gives 40 seconds of actual motion. Early ideal routes keep a generous
+// Full charge gives about 36 seconds of actual motion. Early ideal routes keep a generous
 // reserve; longer maps may need resources, but never every battery on their ideal route.
 const fullChargeDistance = CONFIG.playerSpeed * CONFIG.chargeMax / CONFIG.chargeDrainPerSec;
 console.log('Ideal route lengths:', routeLengths.join(', '));
@@ -162,7 +182,7 @@ assert(routeLengths.every((length, index) => {
       CONFIG.playerSpeed;
 }), 'an ideal route must leave at least one battery optional');
 
-// Balance pass with a modest 12% route/exploration allowance. Enumerate short
+// Balance pass with 12/18/25% route/exploration allowance by campaign tier. Enumerate
 // battery orders, apply charge per leg, respect the 100 cap, and leave one pickup unused.
 function gridDistance(level, from, to, blockers = level.walls) {
   const cell = 30;
@@ -193,6 +213,63 @@ function gridDistance(level, from, to, blockers = level.walls) {
   return Infinity;
 }
 
+function maxEmptyStretchOnMainRoute(level, from, to) {
+  const cell = 30;
+  const cols = Math.ceil(level.width / cell);
+  const rows = Math.ceil(level.height / cell);
+  const indexOf = (col, row) => row * cols + col;
+  const toCell = (point) => [Math.floor(point.x / cell), Math.floor(point.y / cell)];
+  const [startCol, startRow] = toCell(from);
+  const [targetCol, targetRow] = toCell(to);
+  const parent = new Int32Array(cols * rows);
+  parent.fill(-2);
+  const startIndex = indexOf(startCol, startRow);
+  parent[startIndex] = -1;
+  const queue = [[startCol, startRow]];
+  for (let head = 0; head < queue.length; head++) {
+    const [col, row] = queue[head];
+    if (col === targetCol && row === targetRow) break;
+    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+      const nc = col + dc, nr = row + dr;
+      if (nc < 0 || nr < 0 || nc >= cols || nr >= rows) continue;
+      const nextIndex = indexOf(nc, nr);
+      if (parent[nextIndex] !== -2) continue;
+      const x = (nc + 0.5) * cell, y = (nr + 0.5) * cell;
+      if (level.walls.some((wall) =>
+        pointInExpandedRect(x, y, wall, CONFIG.playerRadius))) continue;
+      parent[nextIndex] = indexOf(col, row);
+      queue.push([nc, nr]);
+    }
+  }
+  const landmarks = [
+    from, to,
+    ...level.batteries, ...level.candles, ...level.monsters, ...level.lenses,
+    ...level.traps.map((trap) => ({
+      x: trap.x + trap.width / 2, y: trap.y + trap.height / 2,
+    })),
+  ];
+  for (const wall of level.walls) {
+    landmarks.push(
+      { x: wall.x, y: wall.y },
+      { x: wall.x + wall.width, y: wall.y },
+      { x: wall.x, y: wall.y + wall.height },
+      { x: wall.x + wall.width, y: wall.y + wall.height }
+    );
+  }
+  let at = indexOf(targetCol, targetRow);
+  let empty = 0;
+  let maximum = 0;
+  while (at >= 0) {
+    const col = at % cols, row = Math.floor(at / cols);
+    const x = (col + 0.5) * cell, y = (row + 0.5) * cell;
+    const seesLandmark = landmarks.some((point) => Math.hypot(x - point.x, y - point.y) <= 230);
+    empty = seesLandmark ? 0 : empty + cell;
+    maximum = Math.max(maximum, empty);
+    at = parent[at];
+  }
+  return maximum;
+}
+
 function batteryOrders(count) {
   const result = [[]];
   const build = (prefix, unused, length) => {
@@ -209,25 +286,32 @@ function batteryOrders(count) {
   return result;
 }
 
-const explorationFactor = 1.12;
+const explorationFactorForLevel = (index) => index < 10 ? 1.12 : index < 20 ? 1.18 : 1.25;
+const emptyStretches = [];
+const minimumBatteryUses = [];
 LEVELS.forEach((level, index) => {
   const door = {
     x: level.door.x + level.door.width / 2,
     y: level.door.y + level.door.height / 2,
   };
   const nodes = [level.playerStart, ...level.batteries, door];
+  const emptyStretch = maxEmptyStretchOnMainRoute(level, level.playerStart, door);
+  emptyStretches.push(emptyStretch);
+  assert(emptyStretch <= 1300,
+    `level ${index + 1} (${level.name}): excessive empty stretch on main route`);
   assert(Number.isFinite(gridDistance(
     level, level.playerStart, door, [...level.walls, ...level.traps]
   )), `level ${index + 1} (${level.name}): traps block every route`);
   const distances = nodes.map((from) => nodes.map((to) => gridDistance(level, from, to)));
   let feasible = false;
+  let minimumUsed = Infinity;
   for (const order of batteryOrders(level.batteries.length)) {
     if (level.batteries.length > 0 && order.length === level.batteries.length) continue;
     let charge = CONFIG.chargeMax;
     let current = 0;
     let valid = true;
     for (const next of [...order, nodes.length - 1]) {
-      const travel = distances[current][next] * explorationFactor;
+      const travel = distances[current][next] * explorationFactorForLevel(index);
       charge -= travel / CONFIG.playerSpeed * CONFIG.chargeDrainPerSec;
       if (charge < 0) {
         valid = false;
@@ -238,11 +322,21 @@ LEVELS.forEach((level, index) => {
       }
       current = next;
     }
-    if (valid) feasible = true;
+    if (valid) {
+      feasible = true;
+      minimumUsed = Math.min(minimumUsed, order.length);
+    }
   }
   assert(feasible,
     `level ${index + 1} (${level.name}): no buffered route leaving a battery optional`);
+  minimumBatteryUses.push(minimumUsed);
 });
+assert(average(emptyStretches) <= 650,
+  'campaign main routes contain too much travel without content or geometry');
+const lateLevelsNeedingBattery = minimumBatteryUses.slice(20).filter((count) => count > 0).length;
+assert(lateLevelsNeedingBattery >= 3,
+  'late-campaign batteries no longer affect buffered route balance');
+console.log(`Buffered late routes require a battery on ${lateLevelsNeedingBattery}/10 levels.`);
 
 console.log(`Validated 30 levels; ideal routes ${Math.min(...routeLengths)}-${Math.max(...routeLengths)} world units; full-charge travel ${fullChargeDistance}.`);
 
@@ -279,10 +373,12 @@ assert.strictEqual(JSON.stringify(LEVELS), templatesBefore,
 // neither secondary center ray may be swallowed by an adjacent wall.
 const lighting = new Lighting();
 let lensCount = 0;
+let usefulLensCount = 0;
 LEVELS.forEach((template, index) => {
   const level = new Level(template, index);
   for (const lens of level.lenses) {
     lensCount += 1;
+    let revealsGameplayObject = false;
     const axisX = Math.cos(lens.angle), axisY = Math.sin(lens.angle);
     const segments = lighting.collectSegments(level).segments;
     for (const sign of [-1, 1]) {
@@ -297,14 +393,31 @@ LEVELS.forEach((template, index) => {
       const flashlight = lighting.directionalFlashlight(
         level, player, CONFIG.chargeMax, 0
       );
-      assert.strictEqual(lighting.lensSecondaryLights(
+      const secondary = lighting.lensSecondaryLights(
         level, player, CONFIG.chargeMax, 0, flashlight
-      ).length, 1, `level ${index + 1}: lens cannot activate from both sides`);
+      );
+      assert.strictEqual(secondary.length, 1,
+        `level ${index + 1}: lens cannot activate from both sides`);
+      const secondaryPolygon = [
+        { x: secondary[0].ox, y: secondary[0].oy }, ...secondary[0].points,
+      ];
+      const revealTargets = [
+        ...level.batteries, ...level.candles, ...level.monsters,
+        ...level.traps.map((trap) => ({
+          x: trap.x + trap.width / 2, y: trap.y + trap.height / 2,
+        })),
+        { x: level.door.x + level.door.width / 2,
+          y: level.door.y + level.door.height / 2 },
+      ];
+      if (revealTargets.some((target) => lighting.pointInPolygon(
+        target.x, target.y, secondaryPolygon
+      ))) revealsGameplayObject = true;
       const direction = lens.angle + (sign < 0 ? Math.PI : 0);
       assert(lighting.nearestIntersection(
         lens.x, lens.y, direction, lens.range, segments
       ).dist >= 180, `level ${index + 1}: secondary light immediately hits a wall`);
     }
+    if (revealsGameplayObject) usefulLensCount += 1;
   }
   const spawnPlayer = {
     x: level.playerStart.x, y: level.playerStart.y,
@@ -323,3 +436,5 @@ LEVELS.forEach((template, index) => {
   }
 });
 assert(lensCount >= 20, 'lens campaign coverage unexpectedly changed');
+assert(usefulLensCount / lensCount >= 0.70,
+  'most campaign lenses must reveal a gameplay object or door');
