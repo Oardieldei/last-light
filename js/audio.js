@@ -44,8 +44,23 @@ class AudioManager {
   unlock() {
     if (this.unlocked) return;
     this.unlocked = true;
-    // load() уже выполнен; реальное воспроизведение всегда связано с актуальным
-    // событием, поэтому разблокировка не создаёт отложенную очередь звуков.
+    // Одного логического флага недостаточно для Safari/iOS: каждый media element
+    // должен получить play() непосредственно внутри user gesture. Прайминг беззвучен
+    // и не является очередью gameplay-событий.
+    for (const audio of Object.values(this.sounds)) {
+      const generation = audio._audioPlayGeneration || 0;
+      audio.muted = true;
+      const promise = audio.play();
+      const finish = () => {
+        // Не останавливаем реальный SFX, если он успел стартовать после прайминга.
+        if ((audio._audioPlayGeneration || 0) !== generation) return;
+        audio.pause();
+        audio.currentTime = 0;
+        audio.muted = false;
+      };
+      if (promise && promise.then) promise.then(finish, finish);
+      else finish();
+    }
   }
 
   setMuted(muted) {
@@ -66,6 +81,8 @@ class AudioManager {
     if (this.muted || !this.unlocked) return false;
     const audio = this.sounds[name];
     if (!audio) return false;
+    audio._audioPlayGeneration = (audio._audioPlayGeneration || 0) + 1;
+    audio.muted = false;
     audio.pause();
     audio.currentTime = 0;
     audio.playbackRate = rate;
