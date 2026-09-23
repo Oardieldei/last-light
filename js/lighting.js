@@ -285,11 +285,46 @@ class Lighting {
       ...beam.points,
     ]);
   }
+
+  // Линза должна одновременно лежать в реальном occluded polygon фонаря и принимать
+  // свет почти вдоль своей двусторонней оси. Результат не записывается в runtime.
+  lensSecondaryLights(level, player, charge, timeMs, flashlight) {
+    if (charge <= 0) return [];
+    const primaryPoly = [{ x: player.x, y: player.y }, ...flashlight.points];
+    const tolerance = CONFIG.lensAxisToleranceDeg * DEG2RAD;
+    const lights = [];
+    for (const lens of level.lenses) {
+      if (!this.circleIntersectsPolygon(
+        lens.x, lens.y, lens.radius * 0.35, primaryPoly
+      )) continue;
+      const incomingAngle = Math.atan2(lens.y - player.y, lens.x - player.x);
+      const axisDelta = Math.abs(this.wrapAngle(incomingAngle - lens.angle));
+      const axialDelta = Math.min(axisDelta, Math.abs(Math.PI - axisDelta));
+      if (axialDelta > tolerance) continue;
+
+      // Продолжение хода луча: выбираем направление оси, смотрящее от игрока.
+      const ax = Math.cos(lens.angle), ay = Math.sin(lens.angle);
+      const sign = (lens.x - player.x) * ax + (lens.y - player.y) * ay >= 0 ? 1 : -1;
+      const angle = lens.angle + (sign < 0 ? Math.PI : 0);
+      // Старт строго в центре линзы: заметный offset мог перенести origin за
+      // тонкую/близкую стену и тем самым позволить secondary light перепрыгнуть её.
+      const ox = lens.x;
+      const oy = lens.y;
+      lights.push({
+        lens, ox, oy, angle, range: lens.range,
+        points: this.visibilityPolygon(level, ox, oy, angle, lens.fovDeg, lens.range),
+      });
+    }
+    return lights;
+  }
 // ---------------------------------------------------------------- отрисовка
 
-  // world -> logical viewport (геометрия 1:1, сдвиг на камеру).
+  // world -> logical viewport: тот же zoom и центр камеры, что использует World.
   toViewport(sx, sy, cam, viewW, viewH) {
-    return { x: sx + viewW / 2 - cam.x, y: sy + viewH / 2 - cam.y };
+    return {
+      x: (sx - cam.x) * cam.zoom + viewW / 2,
+      y: (sy - cam.y) * cam.zoom + viewH / 2,
+    };
   }
 
   render(ctx, level, player, camera, charge, viewW, viewH, timeMs) {
@@ -301,6 +336,7 @@ class Lighting {
     const flashlight = this.directionalFlashlight(level, player, charge, timeMs);
     const beamRange = flashlight.range;
     const beamAlpha = 0.40 + 0.60 * dim;
+    const lensLights = this.lensSecondaryLights(level, player, charge, timeMs, flashlight);
 
     const ox = player.x, oy = player.y;
     const lookAngle = flashlight.lookAngle;
@@ -335,6 +371,10 @@ class Lighting {
     mc.globalCompositeOperation = 'destination-out';
     this.fillLocalLight(mc, localPoly, camera, viewW, viewH, ox, oy, localRange, localAlpha);
     this.fillBeam(mc, beamPoly, camera, viewW, viewH, ox, oy, beamRange, beamAlpha);
+    for (const light of lensLights) {
+      this.fillBeam(mc, light.points, camera, viewW, viewH,
+        light.ox, light.oy, light.range, CONFIG.lensSecondaryAlpha * dim);
+    }
     for (const light of candleLights) {
       this.fillLocalLight(
         mc, light.poly, camera, viewW, viewH,
@@ -345,6 +385,10 @@ class Lighting {
     // 3) Мягкость: затухание луча к дальней границе (внутри полигона луча).
     mc.globalCompositeOperation = 'source-over';
     this.fadeBeam(mc, beamPoly, camera, viewW, viewH, ox, oy, beamRange, CONFIG.beamFade * (0.5 + 0.5 * dim));
+    for (const light of lensLights) {
+      this.fadeBeam(mc, light.points, camera, viewW, viewH,
+        light.ox, light.oy, light.range, CONFIG.lensSecondaryFade);
+    }
     mc.restore();
 
     // 4) Перенос маски на основной канвас (в логических координатах).
@@ -366,7 +410,7 @@ class Lighting {
     if (poly.length < 3) return;
     const c = this.toViewport(ox, oy, cam, viewW, viewH);
     this.beginPolygonPath(mc, poly, cam, viewW, viewH, true);
-    const grad = mc.createRadialGradient(c.x, c.y, 0, c.x, c.y, range);
+    const grad = mc.createRadialGradient(c.x, c.y, 0, c.x, c.y, range * cam.zoom);
     grad.addColorStop(0.0, `rgba(0,0,0,${alpha.toFixed(3)})`);
     grad.addColorStop(0.8, `rgba(0,0,0,${(alpha * 0.55).toFixed(3)})`);
     grad.addColorStop(1.0, 'rgba(0,0,0,0)');
@@ -397,15 +441,17 @@ class Lighting {
     ctx.clip();
     ctx.globalCompositeOperation = 'lighter';
     const grad = ctx.createRadialGradient(
-      c.x, c.y, 0, c.x, c.y, CONFIG.candleLightRange
+      c.x, c.y, 0, c.x, c.y, CONFIG.candleLightRange * cam.zoom
     );
     grad.addColorStop(0, `rgba(255,176,70,${CONFIG.candleGlowAlpha})`);
     grad.addColorStop(0.55, `rgba(255,132,45,${(CONFIG.candleGlowAlpha * 0.38).toFixed(3)})`);
     grad.addColorStop(1, 'rgba(255,110,35,0)');
     ctx.fillStyle = grad;
     ctx.fillRect(
-      c.x - CONFIG.candleLightRange, c.y - CONFIG.candleLightRange,
-      CONFIG.candleLightRange * 2, CONFIG.candleLightRange * 2
+      c.x - CONFIG.candleLightRange * cam.zoom,
+      c.y - CONFIG.candleLightRange * cam.zoom,
+      CONFIG.candleLightRange * 2 * cam.zoom,
+      CONFIG.candleLightRange * 2 * cam.zoom
     );
     ctx.restore();
   }
@@ -415,8 +461,16 @@ class Lighting {
   fadeBeam(mc, poly, cam, viewW, viewH, ox, oy, range, fade) {
     if (!poly.length) return;
     const c = this.toViewport(ox, oy, cam, viewW, viewH);
-    this.beginPolygonPath(mc, poly, cam, viewW, viewH, false);
-    const grad = mc.createRadialGradient(c.x, c.y, 0, c.x, c.y, range);
+    // В отличие от кругового visibility polygon, направленный contour не содержит
+    // origin. Добавляем его явно, иначе fill замыкал только дальнюю хорду веера.
+    mc.beginPath();
+    mc.moveTo(c.x, c.y);
+    for (const p of poly) {
+      const v = this.toViewport(p.x, p.y, cam, viewW, viewH);
+      mc.lineTo(v.x, v.y);
+    }
+    mc.closePath();
+    const grad = mc.createRadialGradient(c.x, c.y, 0, c.x, c.y, range * cam.zoom);
     grad.addColorStop(0.0, 'rgba(0,0,0,0)');
     grad.addColorStop(0.6, `rgba(0,0,0,${(fade * 0.4).toFixed(3)})`);
     grad.addColorStop(1.0, `rgba(0,0,0,${fade.toFixed(3)})`);

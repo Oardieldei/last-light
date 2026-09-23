@@ -10,6 +10,8 @@ class Monster {
     this.radius = CONFIG.monsterRadius;
     this.speed = CONFIG.monsterSpeed;
     this.active = false;
+    this.waking = false;
+    this.wakeRemaining = 0;
 
     this.path = [];
     this.pathIndex = 0;
@@ -19,12 +21,25 @@ class Monster {
   }
 
   activate() {
-    if (this.active) return;
-    this.active = true;
+    if (this.active || this.waking) return;
+    this.waking = true;
+    this.wakeRemaining = CONFIG.monsterWakeDuration;
     this.repathIn = 0;
   }
 
   update(dt, level, player) {
+    if (this.waking) {
+      this.wakeRemaining = Math.max(0, this.wakeRemaining - dt);
+      if (this.wakeRemaining <= 1e-9) {
+        this.wakeRemaining = 0;
+        this.waking = false;
+        this.active = true;
+        this.repathIn = 0;
+      }
+      // В кадре пробуждения монстр ещё не движется: игрок всегда получает полные
+      // 1.5 секунды предупреждения независимо от размера последнего dt.
+      return;
+    }
     if (!this.active || dt <= 0) return;
 
     this.repathIn -= dt;

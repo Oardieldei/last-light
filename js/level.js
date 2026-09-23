@@ -39,6 +39,16 @@ class Level {
       x: t.x, y: t.y, width: t.width, height: t.height,
     }));
     this.monsters = (data.monsters || []).map((m) => new Monster(m.x, m.y));
+    // Линза не хранит activation: активный secondary light вычисляется заново из
+    // текущей геометрии primary flashlight. Копия всё равно отделяет runtime от шаблона.
+    this.lenses = (data.lenses || []).map((lens) => ({
+      x: lens.x,
+      y: lens.y,
+      angle: lens.angle,
+      radius: lens.radius || CONFIG.lensVisualRadius,
+      range: lens.range || CONFIG.lensSecondaryRange,
+      fovDeg: lens.fovDeg || CONFIG.lensSecondaryFovDeg,
+    }));
 
     this.addBorderWalls();
   }

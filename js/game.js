@@ -197,7 +197,7 @@ class Game {
     // Только реальная occluded-область направленного фонаря будит монстра.
     // После активации он продолжает преследование независимо от освещения.
     for (const monster of this.level.monsters) {
-      if (!monster.active && this.lighting.isCircleInDirectionalFlashlight(
+      if (!monster.active && !monster.waking && this.lighting.isCircleInDirectionalFlashlight(
         this.level, player, this.charge, this.timeMs,
         monster.x, monster.y, CONFIG.monsterVisualRadius
       )) monster.activate();

@@ -4,6 +4,8 @@ const CONFIG = {
   // Логическое разрешение вертикального viewport (9:16).
   viewWidth: 360,
   viewHeight: 640,
+  // Экранных пикселей на один world px. 1/3 показывает примерно втрое больше мира.
+  cameraZoom: 1 / 3,
 
   // Максимальный dt на кадр (сек). Защита от «телепортов» после пауз/переключения вкладок.
   maxDt: 0.05,
@@ -11,7 +13,7 @@ const CONFIG = {
   // Игрок.
   playerRadius: 10,          // радиус коллизии
   playerVisualRadius: 11,    // визуальный радиус (~22 px)
-  playerSpeed: 200,          // пикселей/сек, постоянная скорость
+  playerSpeed: 135,          // world units/sec, постоянная скорость
   playerStopDeadzone: 4,     // если цель ближе этого значения — движение останавливается
 
   // Ввод (мышь + touch через Pointer Events).
@@ -25,7 +27,7 @@ const CONFIG = {
   // ---------- Заряд фонаря (Этап 2) ----------
   chargeMax: 100,
   // Расход заряда в секунду ФАКТИЧЕСКОГО движения игрока (стояние ничего не тратит).
-  chargeDrainPerSec: 1.0,
+  chargeDrainPerSec: 2.5,
   // Порог фактического перемещения за кадр (world px): ниже — «игрок стоит».
   chargeMoveEpsilon: 0.001,
   // Ниже этой доли заряда (0..1) свет начинает плавно слабеть.
@@ -43,7 +45,7 @@ const CONFIG = {
   // Сила вырезания локального света (0..1): чем выше, тем ярче.
   localLightMaxAlpha: 0.85,
   // Основной луч: дальность, полный угол, ослабление к дальней границе.
-  beamRange: 300,
+  beamRange: 200,
   // Минимальная дальность луча (как доля от beamRange) при заряде → 0.
   beamMinRangeFrac: 0.35,
   beamFovDeg: 60,
@@ -51,6 +53,15 @@ const CONFIG = {
   beamFade: 0.62,
   // Угловой эпсилон лучей вокруг вершин стен (рад) — классика ray-casting.
   occlusionEpsilon: 0.00022,
+
+  // ---------- Этап 5: линза ----------
+  lensVisualRadius: 12,
+  // Допустимое отклонение входящего луча от двусторонней оптической оси.
+  lensAxisToleranceDeg: 16,
+  lensSecondaryRange: 520,
+  lensSecondaryFovDeg: 34,
+  lensSecondaryAlpha: 0.88,
+  lensSecondaryFade: 0.50,
 
   // ---------- Этап 3: ресурсы и интерактивные объекты ----------
   // Сколько заряда восстанавливает одна батарейка.
@@ -72,7 +83,9 @@ const CONFIG = {
   // ---------- Этап 4: базовый монстр ----------
   monsterRadius: 10,
   monsterVisualRadius: 11,
-  monsterSpeed: 150,
+  monsterSpeed: 100,
+  // Задержка между первым попаданием primary flashlight и началом погони.
+  monsterWakeDuration: 1.5,
   // Маршрут обновляется периодически и при заметном перемещении цели.
   monsterRepathSec: 0.30,
   monsterRepathDistance: 24,
