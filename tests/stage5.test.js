@@ -14,7 +14,7 @@ const sandbox = {
 };
 vm.createContext(sandbox);
 for (const file of [
-  'js/config.js', 'js/collision.js', 'js/monster.js', 'js/level.js',
+  'js/config.js', 'js/levels.js', 'js/collision.js', 'js/monster.js', 'js/level.js',
   'js/lighting.js', 'js/world.js', 'js/game.js',
 ]) {
   vm.runInContext(`${fs.readFileSync(file, 'utf8')}\n`, sandbox, { filename: file });
@@ -25,6 +25,7 @@ const Lighting = get('Lighting');
 const World = get('World');
 const Level = get('Level');
 const Game = get('Game');
+const LEVELS = get('LEVELS');
 
 function levelWith(walls = [], lenses = [{
   x: 500, y: 500, angle: 0, radius: 12, range: 400, fovDeg: 34,
@@ -112,6 +113,20 @@ function secondaryFor(lighting, level, player, charge = CONFIG.chargeMax) {
     { x: 300, y: 500, lookDirection: { x: 1, y: 0 } }).length, 1);
 }
 
+// Regression: the gameplay aperture must match the visibly rendered lens. At 200
+// units this beam edge touches the outer glass but misses the old 35%-radius core.
+{
+  const lighting = new Lighting();
+  const level = levelWith();
+  const edgeAngle = 31.5 * Math.PI / 180;
+  const player = {
+    x: 300, y: 500,
+    lookDirection: { x: Math.cos(edgeAngle), y: Math.sin(edgeAngle) },
+  };
+  assert.strictEqual(secondaryFor(lighting, level, player).length, 1,
+    'visible primary-beam contact must activate the full lens aperture');
+}
+
 // A wall immediately after the lens, including a wall thinner than the old output
 // offset, must stop every ray rather than being skipped by the secondary origin.
 {
@@ -121,6 +136,78 @@ function secondaryFor(lighting, level, player, charge = CONFIG.chargeMax) {
     { x: 300, y: 500, lookDirection: { x: 1, y: 0 } });
   assert(light);
   assert(light.points.every((point) => point.x <= 503 + 1e-6));
+}
+
+// Real campaign regression: tutorial lenses and representative late lenses activate
+// from both axial sides, reject side incidence/turned-away beams, and reveal their
+// deliberately placed object through secondary-only geometry.
+{
+  const lighting = new Lighting();
+  for (const number of [6, 10, 15, 23, 26, 30]) {
+    const level = new Level(LEVELS[number - 1], number - 1);
+    const lens = level.lenses[0];
+    const axis = { x: Math.cos(lens.angle), y: Math.sin(lens.angle) };
+    for (const side of [-1, 1]) {
+      const player = {
+        x: lens.x - axis.x * side * 160,
+        y: lens.y - axis.y * side * 160,
+        lookDirection: { x: axis.x * side, y: axis.y * side },
+      };
+      assert.strictEqual(secondaryFor(lighting, level, player).length, 1,
+        `campaign level ${number}: lens must work from side ${side}`);
+    }
+
+    const upstream = {
+      x: lens.x - axis.x * 160,
+      y: lens.y - axis.y * 160,
+      lookDirection: { x: axis.x, y: axis.y },
+    };
+    const [secondary] = secondaryFor(lighting, level, upstream);
+    assert(secondary && secondary.points.length >= 2,
+      `campaign level ${number}: secondary polygon must be visible`);
+    const secondaryPolygon = [
+      { x: secondary.ox, y: secondary.oy }, ...secondary.points,
+    ];
+    const targets = [
+      ...level.batteries, ...level.candles, ...level.monsters,
+      ...level.traps.map((trap) => ({
+        x: trap.x + trap.width / 2, y: trap.y + trap.height / 2,
+      })),
+    ];
+    assert(targets.some((target) => lighting.pointInPolygon(
+      target.x, target.y, secondaryPolygon
+    )), `campaign level ${number}: first lens must reveal its planned object`);
+
+    const turnedAway = {
+      ...upstream,
+      lookDirection: { x: -axis.x, y: -axis.y },
+    };
+    assert.strictEqual(secondaryFor(lighting, level, turnedAway).length, 0,
+      `campaign level ${number}: turning away must remove secondary light`);
+    const sidePlayer = {
+      x: lens.x - axis.y * 160,
+      y: lens.y + axis.x * 160,
+      lookDirection: { x: axis.y, y: -axis.x },
+    };
+    assert.strictEqual(secondaryFor(lighting, level, sidePlayer).length, 0,
+      `campaign level ${number}: side incidence must not activate lens`);
+  }
+
+  // A lens is not cover: move inside normal primary range on level 15 and the monster
+  // directly behind the lens is still a primary hit.
+  const level15 = new Level(LEVELS[14], 14);
+  const lens = level15.lenses[0];
+  const monster = level15.monsters[0];
+  const axis = { x: Math.cos(lens.angle), y: Math.sin(lens.angle) };
+  const closePlayer = {
+    x: lens.x - axis.x * 40,
+    y: lens.y - axis.y * 40,
+    lookDirection: axis,
+  };
+  assert.strictEqual(lighting.isCircleInDirectionalFlashlight(
+    level15, closePlayer, CONFIG.chargeMax, 0,
+    monster.x, monster.y, CONFIG.monsterVisualRadius
+  ), true, 'campaign lens must not shield a monster from direct primary light');
 }
 
 // Level templates/runtime copies are independent and carry no activation state.

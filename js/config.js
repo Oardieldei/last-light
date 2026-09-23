@@ -13,7 +13,7 @@ const CONFIG = {
   // Игрок.
   playerRadius: 10,          // радиус коллизии
   playerVisualRadius: 11,    // визуальный радиус (~22 px)
-  playerSpeed: 135,          // world units/sec, постоянная скорость
+  playerSpeed: 160,          // world units/sec, постоянная скорость
   playerStopDeadzone: 4,     // если цель ближе этого значения — движение останавливается
 
   // Ввод (мышь + touch через Pointer Events).
@@ -83,7 +83,7 @@ const CONFIG = {
   // ---------- Этап 4: базовый монстр ----------
   monsterRadius: 10,
   monsterVisualRadius: 11,
-  monsterSpeed: 100,
+  monsterSpeed: 120,
   // Задержка между первым попаданием primary flashlight и началом погони.
   monsterWakeDuration: 1.5,
   // Маршрут обновляется периодически и при заметном перемещении цели.

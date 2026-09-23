@@ -294,8 +294,12 @@ class Lighting {
     const tolerance = CONFIG.lensAxisToleranceDeg * DEG2RAD;
     const lights = [];
     for (const lens of level.lenses) {
+      // Gameplay aperture совпадает с видимым размером линзы. Прежние 35% радиуса
+      // превращались при zoom=1/3 примерно в один screen pixel: визуально луч уже
+      // касался стекла, но gameplay-проверка считала промах. Polygon по-прежнему
+      // является реальной occluded-геометрией primary flashlight.
       if (!this.circleIntersectsPolygon(
-        lens.x, lens.y, lens.radius * 0.35, primaryPoly
+        lens.x, lens.y, lens.radius, primaryPoly
       )) continue;
       const incomingAngle = Math.atan2(lens.y - player.y, lens.x - player.x);
       const axisDelta = Math.abs(this.wrapAngle(incomingAngle - lens.angle));

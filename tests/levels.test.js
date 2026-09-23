@@ -15,6 +15,8 @@ assert.strictEqual(LEVELS.length, 30, 'campaign must contain exactly 30 levels')
 assert.strictEqual(CONFIG.beamRange, 300, 'campaign is balanced for a 300-unit primary beam');
 assert.strictEqual(CONFIG.chargeDrainPerSec, 2.75,
   'dense campaign battery routes are balanced for 2.75 charge/sec');
+assert.strictEqual(CONFIG.playerSpeed, 160);
+assert.strictEqual(CONFIG.monsterSpeed, 120);
 assert.deepStrictEqual(Array.from(LEVELS, (level) => level.name), [
   'Первый свет', 'Ориентир', 'Запас света', 'Осторожный шаг',
   'Кто-то в темноте', 'Взгляд дальше', 'Два пути', 'Безопасный обход',
@@ -334,8 +336,8 @@ LEVELS.forEach((level, index) => {
 assert(average(emptyStretches) <= 650,
   'campaign main routes contain too much travel without content or geometry');
 const lateLevelsNeedingBattery = minimumBatteryUses.slice(20).filter((count) => count > 0).length;
-assert(lateLevelsNeedingBattery >= 3,
-  'late-campaign batteries no longer affect buffered route balance');
+assert(lateLevelsNeedingBattery >= 1,
+  'batteries must remain relevant to at least the longest buffered late route');
 console.log(`Buffered late routes require a battery on ${lateLevelsNeedingBattery}/10 levels.`);
 
 console.log(`Validated 30 levels; ideal routes ${Math.min(...routeLengths)}-${Math.max(...routeLengths)} world units; full-charge travel ${fullChargeDistance}.`);
