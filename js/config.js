@@ -95,4 +95,23 @@ const CONFIG = {
   monsterRepathDistance: 24,
   // Дополнительный зазор узлов visibility graph от углов стен.
   monsterPathPadding: 2,
+
+  // ---------- Audio ----------
+  audioMasterVolume: 1,
+  audioVolumes: {
+    batteryPickup: 0.55, batteryUse: 0.55, candleIgnite: 0.48,
+    caught: 0.72, door: 0.65, flashlightOn: 0.42, flashlightOff: 0.38,
+    footstep1: 0.30, footstep2: 0.30, heart: 1, levelComplete: 0.62, trap: 0.70,
+  },
+  footstepDistance: 72,
+  heartbeatFarDistance: 900,
+  heartbeatNearDistance: 150,
+  heartbeatMinVolume: 0.12,
+  heartbeatMaxVolume: 0.45,
+  heartbeatFarCadence: 1.35,
+  heartbeatNearCadence: 0.65,
+  heartbeatMaxPlaybackRate: 1.17,
+  heartbeatFadeInSec: 0.28,
+  audioSmoothingSec: 0.16,
+  victorySoundDelayMs: 400,
 };

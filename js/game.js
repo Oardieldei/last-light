@@ -2,13 +2,14 @@
 // Поток данных: input -> game state -> update -> render.
 // Рендер: World рисует мир, Lighting кладёт darkness-маску, HUD — DOM поверх.
 class Game {
-  constructor({ ctx, input, ui, world, lighting, effects = null }) {
+  constructor({ ctx, input, ui, world, lighting, effects = null, audio = null }) {
     this.ctx = ctx;
     this.input = input;
     this.ui = ui;
     this.world = world;
     this.lighting = lighting;
     this.effects = effects;
+    this.audio = audio;
 
     this.STATE = {
       MENU: 'MENU',
@@ -52,12 +53,14 @@ class Game {
 
   goToMenu() {
     if (this.effects) this.effects.reset();
+    if (this.audio) this.audio.stopAll();
     this.activeLenses.clear();
     this.setState(this.STATE.MENU);
     this.ui.showMenu({ onStart: () => this.startGame() });
   }
 
   loadLevel(index) {
+    if (this.audio) this.audio.resetLevel();
     this.levelIndex = index;
     this.level = new Level(LEVELS[index], index);
     this.player = new Player(this.level.playerStart.x, this.level.playerStart.y);
@@ -85,6 +88,7 @@ class Game {
   nextLevel() {
     if (this.levelIndex >= LEVELS.length - 1) {
       // Последний уровень пройден.
+      if (this.audio) this.audio.stopAll();
       this.setState(this.STATE.GAME_COMPLETE);
       this.ui.showGameComplete({
         onPlayAgain: () => this.startGame(),
@@ -99,6 +103,7 @@ class Game {
   finishLevel() {
     if (this.effects) this.effects.screenFlash('#75f0b4', 0.24, 0.65);
     this.setState(this.STATE.LEVEL_COMPLETE);
+    if (this.audio) this.audio.playVictory();
     const isLast = this.levelIndex >= LEVELS.length - 1;
     this.ui.showLevelComplete({
       number: this.levelIndex + 1,
@@ -112,6 +117,11 @@ class Game {
       const caught = reason === 'Вас поймали';
       this.effects.burst(this.player.x, this.player.y, caught ? '#b9d5e4' : '#dc6b62', 14, 48);
       this.effects.screenFlash(caught ? '#9bb7c7' : '#b84038', 0.25, 0.55);
+    }
+    if (this.audio) {
+      this.audio.stopAll();
+      if (reason === 'Вас поймали') this.audio.play('caught');
+      else if (reason === 'Вы попались') this.audio.play('trap');
     }
     // Этап 1: травмы/ловушки. Этап 2: «Фонарь погас» (заряд 0).
     this.setState(this.STATE.LEVEL_FAILED);
@@ -127,6 +137,7 @@ class Game {
         this.batteryInventory <= 0 || this.charge >= CONFIG.chargeMax) return;
     this.batteryInventory -= 1;
     this.charge = Math.min(CONFIG.chargeMax, this.charge + CONFIG.batteryChargeGain);
+    if (this.audio) this.audio.play('batteryUse');
     if (this.effects) {
       this.effects.ring(this.player.x, this.player.y, '#ffe16e', 35, 0.5);
       this.effects.burst(this.player.x, this.player.y, '#ffe16e', 7, 25);
@@ -142,6 +153,7 @@ class Game {
     const player = this.player;
     const world = this.world;
     if (Number.isFinite(this.levelVisualTime)) this.levelVisualTime += dt;
+    if (this.audio) this.audio.updateStartup(this.flashlightStartupPhase());
 
     // Взгляд: курсор мыши (без нажатия) или короткий тап.
     const mouseLook = this.input.consumeMouseLook();
@@ -179,6 +191,7 @@ class Game {
     // Заряд: расходуется ТОЛЬКО при фактическом перемещении (по dt, не по FPS).
     // Если игрок упёрся в стену и не сдвинулся — заряд не тратится.
     const moved = Math.hypot(player.x - prevX, player.y - prevY);
+    if (this.audio) this.audio.updateFootsteps(moved);
     if (!this.playerMotion) this.playerMotion = { moving: false, walkPhase: 0 };
     this.playerMotion.moving = moved > CONFIG.chargeMoveEpsilon;
     if (this.playerMotion.moving) this.playerMotion.walkPhase += dt * 10;
@@ -192,6 +205,7 @@ class Game {
             Math.hypot(player.x - battery.x, player.y - battery.y) <= CONFIG.batteryPickupRange) {
           battery.collected = true;
           this.batteryInventory += 1;
+          if (this.audio) this.audio.play('batteryPickup');
           if (this.effects) this.effects.burst(battery.x, battery.y, '#ffe06a', 9, 34);
         }
       }
@@ -202,6 +216,7 @@ class Game {
       if (!candle.active &&
           Math.hypot(player.x - candle.x, player.y - candle.y) <= CONFIG.candleActivationRadius) {
         candle.active = true;
+        if (this.audio) this.audio.play('candleIgnite');
         if (this.effects) {
           this.effects.ring(candle.x, candle.y, '#ffad45', 28, 0.6);
           this.effects.burst(candle.x, candle.y, '#ffca62', 6, 22);
@@ -248,6 +263,7 @@ class Game {
         return;
       }
     }
+    if (this.audio) this.audio.updateHeartbeat(dt, player, this.level.monsters);
 
     // Камера следует за игроком (мир -> камера, физика не меняется).
     world.follow(player.x, player.y, this.viewWidth, this.viewHeight);
@@ -308,11 +324,24 @@ class Game {
 
   // Несколько presentation-only щелчков; update не передаёт эти вспышки gameplay.
   flashlightStartupBrightness() {
+    const phase = this.flashlightStartupPhase();
     const t = this.levelVisualTime;
-    if (t >= 1) return 1;
-    if ((t >= 0.16 && t < 0.24) || (t >= 0.44 && t < 0.58)) return 0.72;
-    if (t >= 0.78) return (t - 0.78) / 0.22;
+    if (phase === 'stable') return 1;
+    if (phase === 'flash1' || phase === 'flash2') return 0.72;
+    if (phase === 'ramp') return (t - 0.78) / 0.22;
     return 0;
+  }
+
+  // Единый источник истины для visual startup и его звуковых отражений.
+  flashlightStartupPhase() {
+    const t = this.levelVisualTime;
+    if (t >= 1) return 'stable';
+    if (t >= 0.78) return 'ramp';
+    if (t >= 0.58) return 'off2';
+    if (t >= 0.44) return 'flash2';
+    if (t >= 0.24) return 'off1';
+    if (t >= 0.16) return 'flash1';
+    return 'off';
   }
 
   // ---------- Игровой цикл ----------
