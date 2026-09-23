@@ -9,7 +9,9 @@
   const world = new World();
   const lighting = new Lighting();
   const effects = new VisualEffects();
-  const game = new Game({ ctx, input, ui, world, lighting, effects });
+  const audio = new AudioManager();
+  ui.setMuteHandler(() => audio.toggleMute(), audio.muted);
+  const game = new Game({ ctx, input, ui, world, lighting, effects, audio });
 
   // Физический размер канваса = логическое разрешение * DPR.
   // Отрисовка всегда идёт в логических координатах через ctx.setTransform,
