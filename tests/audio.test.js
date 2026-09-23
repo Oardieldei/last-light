@@ -28,7 +28,21 @@ for (const file of ['js/config.js', 'js/audio.js']) {
 const AudioManager = vm.runInContext('AudioManager', sandbox);
 const CONFIG = vm.runInContext('CONFIG', sandbox);
 
-function manager() { const audio = new AudioManager({ storage, AudioClass: FakeAudio }); audio.unlock(); return audio; }
+function manager() {
+  const audio = new AudioManager({ storage, AudioClass: FakeAudio });
+  // Остальные unit tests проверяют event playback отдельно от browser unlock priming.
+  audio.unlocked = true;
+  return audio;
+}
+
+// Unlock performs an actual silent play for every preloaded element, rather than
+// only flipping an internal flag (which does not satisfy stricter browsers).
+{
+  const audio = new AudioManager({ storage, AudioClass: FakeAudio });
+  audio.unlock();
+  assert.strictEqual(audio.unlocked, true);
+  assert(Object.values(audio.sounds).every((sound) => sound.plays === 1 && sound.muted));
+}
 
 // Only waking/active ghosts participate, and the nearest threat controls response.
 {
@@ -46,6 +60,9 @@ function manager() { const audio = new AudioManager({ storage, AudioClass: FakeA
   assert(audio.heartbeatRate > 1 && audio.heartbeatRate < CONFIG.heartbeatMaxPlaybackRate);
   for (let i = 0; i < 20; i++) audio.updateHeartbeat(0.05, player,
     [{ x: 150, y: 0, active: true, waking: false }]);
+  assert(audio.sounds.heart.plays >= 1, 'heartbeat scheduler must actually start the sample');
+  assert(audio.sounds.heart.volume > 0.6,
+    'close heartbeat must reach an audible final HTMLAudioElement volume');
   const closeVolume = audio.heartbeatVolume;
   audio.sounds.heart.paused = true;
   audio.updateHeartbeat(0.2, player, [{ x: 900, y: 0, active: true, waking: false }]);
