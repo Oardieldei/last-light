@@ -213,9 +213,19 @@ class Lighting {
     return dim;
   }
 
+  // Gameplay strength is deliberately time-independent: visual flicker must never
+  // move the visibility polygon or affect monsters/lenses.
+  stableDimForCharge(charge) {
+    let frac = charge / CONFIG.chargeMax;
+    if (!Number.isFinite(frac)) frac = frac > 0 ? 1 : 0;
+    frac = Math.max(0, Math.min(1, frac));
+    return frac < CONFIG.lowChargeFrac
+      ? Math.pow(frac / CONFIG.lowChargeFrac, CONFIG.lowChargePower) : 1;
+  }
+
   // Эффективная дальность луча с учётом заряда.
   beamRangeForCharge(charge, timeMs) {
-    const dim = this.dimForCharge(charge, timeMs);
+    const dim = this.stableDimForCharge(charge);
     return CONFIG.beamRange * (CONFIG.beamMinRangeFrac + (1 - CONFIG.beamMinRangeFrac) * dim);
   }
 
@@ -357,16 +367,21 @@ class Lighting {
     };
   }
 
-  render(ctx, level, player, camera, charge, viewW, viewH, timeMs) {
+  render(ctx, level, player, camera, charge, viewW, viewH, timeMs,
+    beamVisual = 1, secondaryEnabled = true, prepared = null) {
     if (!level || !player) return;
     const dim = this.dimForCharge(charge, timeMs);
 
     const localRange = CONFIG.localLightRange;
     const localAlpha = CONFIG.localLightMaxAlpha * (0.72 + 0.28 * dim);
-    const flashlight = this.directionalFlashlight(level, player, charge, timeMs);
+    // Game may already have calculated these polygons to derive presentation-only
+    // lens state. Reusing them avoids a second set of ray casts in the same frame.
+    const flashlight = prepared && prepared.flashlight
+      ? prepared.flashlight : this.directionalFlashlight(level, player, charge, timeMs);
     const beamRange = flashlight.range;
-    const beamAlpha = 0.40 + 0.60 * dim;
-    const lensLights = this.lensSecondaryLights(level, player, charge, timeMs, flashlight);
+    const beamAlpha = (0.40 + 0.60 * dim) * beamVisual;
+    const lensLights = !secondaryEnabled ? [] : prepared && prepared.lensLights
+      ? prepared.lensLights : this.lensSecondaryLights(level, player, charge, timeMs, flashlight);
 
     const ox = player.x, oy = player.y;
     const lookAngle = flashlight.lookAngle;
@@ -405,7 +420,7 @@ class Lighting {
       for (const layer of light.layers) {
         this.fillBeam(mc, layer.points, camera, viewW, viewH,
           light.ox, light.oy, light.range,
-          light.alpha * layer.alphaScale * dim);
+          light.alpha * layer.alphaScale * dim * beamVisual);
       }
     }
     for (const light of candleLights) {

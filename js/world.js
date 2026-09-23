@@ -36,7 +36,7 @@ class World {
     };
   }
 
-  render(ctx, player, viewW, viewH, timeMs) {
+  render(ctx, player, viewW, viewH, timeMs, presentation = {}) {
     // Фон всего viewport (виден, если мир меньше viewport или уровень ещё не загружен).
     ctx.fillStyle = '#070b12';
     ctx.fillRect(0, 0, viewW, viewH);
@@ -45,6 +45,18 @@ class World {
     if (!level) return; // состояние MENU до старта игры
 
     const cam = this.camera;
+    const visibleHalfW = viewW / cam.zoom / 2;
+    const visibleHalfH = viewH / cam.zoom / 2;
+    const visible = {
+      left: cam.x - visibleHalfW, right: cam.x + visibleHalfW,
+      top: cam.y - visibleHalfH, bottom: cam.y + visibleHalfH,
+    };
+    const rectVisible = (item, padding = 0) => {
+      const width = item.width || 0;
+      const height = item.height || 0;
+      return item.x + width >= visible.left - padding && item.x <= visible.right + padding &&
+        item.y + height >= visible.top - padding && item.y <= visible.bottom + padding;
+    };
 
     ctx.save();
     ctx.translate(viewW / 2, viewH / 2);
@@ -55,50 +67,71 @@ class World {
     ctx.fillStyle = '#0d141d';
     ctx.fillRect(0, 0, level.width, level.height);
 
-    // Сетка пола — помогает видеть движение камеры и геометрию.
-    ctx.strokeStyle = 'rgba(140, 160, 185, 0.07)';
+    // Редкие швы и короткие царапины дают полу фактуру без внешних ассетов.
+    ctx.strokeStyle = 'rgba(135, 155, 175, 0.055)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    for (let gx = 60; gx < level.width; gx += 60) {
-      ctx.moveTo(gx, 0);
-      ctx.lineTo(gx, level.height);
+    const gridLeft = Math.max(60, Math.floor(visible.left / 60) * 60);
+    const gridTop = Math.max(60, Math.floor(visible.top / 60) * 60);
+    for (let gx = gridLeft; gx < Math.min(level.width, visible.right + 60); gx += 60) {
+      ctx.moveTo(gx, Math.max(0, visible.top));
+      ctx.lineTo(gx, Math.min(level.height, visible.bottom));
     }
-    for (let gy = 60; gy < level.height; gy += 60) {
-      ctx.moveTo(0, gy);
-      ctx.lineTo(level.width, gy);
+    for (let gy = gridTop; gy < Math.min(level.height, visible.bottom + 60); gy += 60) {
+      ctx.moveTo(Math.max(0, visible.left), gy);
+      ctx.lineTo(Math.min(level.width, visible.right), gy);
     }
     ctx.stroke();
+    ctx.strokeStyle = 'rgba(190, 205, 215, 0.035)';
+    const firstY = Math.max(35, 35 + Math.floor((visible.top - 35) / 97) * 97);
+    for (let y = firstY; y < Math.min(level.height, visible.bottom + 97); y += 97) {
+      const offset = 27 + (y % 3) * 13;
+      const firstX = Math.max(offset, offset + Math.floor((visible.left - offset) / 143) * 143);
+      for (let x = firstX; x < Math.min(level.width, visible.right + 143); x += 143) {
+        ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + 16, y + 3); ctx.stroke();
+      }
+    }
 
     // Стены (включая добавленные границы мира).
-    for (const w of level.walls) this.drawWall(ctx, w);
+    for (const w of level.walls) if (rectVisible(w, 4)) this.drawWall(ctx, w);
 
     // Ловушки — «пол» уровня, рисуются под остальными объектами.
-    for (const t of level.traps) this.drawTrap(ctx, t);
+    for (const t of level.traps) if (rectVisible(t, 4)) this.drawTrap(ctx, t);
 
     // Дверь.
-    this.drawDoor(ctx, level.door, timeMs);
+    if (rectVisible(level.door, 8)) this.drawDoor(ctx, level.door, timeMs);
 
     // Свечи (неактивные — просто объект; активные — с пламенем).
-    for (const c of level.candles) this.drawCandle(ctx, c, timeMs);
+    for (const c of level.candles) if (rectVisible(c, 20)) this.drawCandle(ctx, c, timeMs);
 
     // Батарейки — только не подобранные.
     for (const b of level.batteries) {
-      if (!b.collected) this.drawBattery(ctx, b, timeMs);
+      if (!b.collected && rectVisible(b, 15)) this.drawBattery(ctx, b, timeMs);
     }
 
-    for (const lens of level.lenses) this.drawLens(ctx, lens);
+    for (const lens of level.lenses) if (rectVisible(lens, lens.radius + 6)) this.drawLens(
+      ctx, lens, presentation.activeLenses && presentation.activeLenses.has(lens), timeMs
+    );
 
     // Монстры остаются world objects и затемняются общей Lighting-маской.
-    for (const monster of level.monsters) this.drawMonster(ctx, monster, timeMs);
+    for (const monster of level.monsters) if (rectVisible(monster, 20)) {
+      this.drawMonster(ctx, monster, timeMs);
+    }
 
     // Игрок.
-    this.drawPlayer(ctx, player);
+    this.drawPlayer(ctx, player, presentation.playerMotion || null);
+
+    if (presentation.effects) presentation.effects.renderWorld(ctx);
 
     ctx.restore();
   }
 
   drawWall(ctx, w) {
-    ctx.fillStyle = '#3a485c';
+    const gradient = ctx.createLinearGradient(w.x, w.y, w.x, w.y + Math.min(w.height, 30));
+    gradient.addColorStop(0, '#526075');
+    gradient.addColorStop(0.18, '#3b485a');
+    gradient.addColorStop(1, '#293441');
+    ctx.fillStyle = gradient;
     ctx.fillRect(w.x, w.y, w.width, w.height);
     ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'; // верхняя грань
     ctx.fillRect(w.x, w.y, w.width, 3);
@@ -128,34 +161,30 @@ class World {
     }
   }
 
-  drawPlayer(ctx, player) {
+  drawPlayer(ctx, player, motion) {
     const r = CONFIG.playerVisualRadius;
-
-    // Корпус.
-    ctx.beginPath();
-    ctx.arc(player.x, player.y, r, 0, Math.PI * 2);
-    ctx.fillStyle = '#ffb03a';
-    ctx.fill();
-    ctx.lineWidth = 2;
-    ctx.strokeStyle = '#7c5116';
-    ctx.stroke();
-
-    // Блик.
-    ctx.beginPath();
-    ctx.arc(player.x - r * 0.3, player.y - r * 0.3, r * 0.35, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(255, 240, 200, 0.65)';
-    ctx.fill();
-
-    // Указатель направления взгляда (подготовка к фонарю).
-    const ldx = player.lookDirection.x;
-    const ldy = player.lookDirection.y;
-    ctx.beginPath();
-    ctx.moveTo(player.x, player.y);
-    ctx.lineTo(player.x + ldx * (r + 9), player.y + ldy * (r + 9));
-    ctx.strokeStyle = 'rgba(255, 176, 58, 0.6)';
-    ctx.lineWidth = 3;
+    const angle = Math.atan2(player.lookDirection.y, player.lookDirection.x);
+    const step = motion && motion.moving ? Math.sin(motion.walkPhase) * 3.2 : 0;
+    ctx.save();
+    ctx.translate(player.x, player.y);
+    ctx.rotate(angle + Math.PI / 2);
     ctx.lineCap = 'round';
-    ctx.stroke();
+    // Ноги и руки видны сверху по сторонам компактного тела.
+    ctx.strokeStyle = '#566271'; ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(-3, 5); ctx.lineTo(-4 - step, 12);
+    ctx.moveTo(3, 5); ctx.lineTo(4 + step, 12);
+    ctx.moveTo(-5, -1); ctx.lineTo(-9, 5 + step * 0.35);
+    ctx.moveTo(5, -1); ctx.lineTo(9, 3 - step * 0.35); ctx.stroke();
+    ctx.fillStyle = '#d9a64d';
+    ctx.beginPath(); ctx.ellipse(0, 2, r * 0.58, r * 0.78, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#e8c59c'; ctx.strokeStyle = '#6c5848'; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(0, -7, 5.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    // Маленький фонарь в правой руке всегда совпадает с lookDirection.
+    ctx.fillStyle = '#bcc6cc';
+    ctx.fillRect(7, -8, 4, 9);
+    ctx.fillStyle = '#fff0a8'; ctx.fillRect(6.5, -9.5, 5, 2.5);
+    ctx.restore();
   }
 
   drawBattery(ctx, battery, timeMs) {
@@ -250,50 +279,53 @@ class World {
 
   drawMonster(ctx, monster, timeMs) {
     const r = CONFIG.monsterVisualRadius;
-    const wakingPulse = monster.waking ? 1 + 0.14 * Math.sin(timeMs / 55) : 1;
-    const breathe = monster.active ? 1 + 0.05 * Math.sin(timeMs / 130) : wakingPulse;
+    const progress = monster.waking
+      ? 1 - monster.wakeRemaining / CONFIG.monsterWakeDuration
+      : monster.active ? 1 : 0;
+    const float = monster.active ? Math.sin(timeMs / 260 + monster.startX) * 1.5 : 0;
+    const breathe = 1 + (monster.active ? 0.035 * Math.sin(timeMs / 180) : 0);
     ctx.save();
-    ctx.translate(monster.x, monster.y);
-    ctx.scale(breathe, breathe);
-
-    ctx.fillStyle = monster.active ? '#8f3547' : monster.waking ? '#794451' : '#4d4450';
-    ctx.strokeStyle = monster.active ? '#d26472' : monster.waking ? '#ff9a6a' : '#746a78';
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.stroke();
-
-    ctx.fillStyle = (monster.active || monster.waking) ? '#ffd36a' : '#817887';
-    for (const sx of [-1, 1]) {
-      ctx.beginPath();
-      ctx.arc(sx * r * 0.35, -r * 0.18, 1.8, 0, Math.PI * 2);
-      ctx.fill();
+    ctx.translate(monster.x, monster.y + float);
+    if (!monster.active && !monster.waking) {
+      ctx.scale(1.35, 0.55);
+      const stain = ctx.createRadialGradient(0, 0, 1, 0, 0, r);
+      stain.addColorStop(0, 'rgba(32,27,42,.68)'); stain.addColorStop(1, 'rgba(25,22,32,0)');
+      ctx.fillStyle = stain; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
+      ctx.restore(); return;
     }
-    if (monster.waking) {
-      const progress = 1 - monster.wakeRemaining / CONFIG.monsterWakeDuration;
-      ctx.strokeStyle = `rgba(255,154,106,${(0.35 + progress * 0.65).toFixed(3)})`;
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.arc(0, 0, r + 5 + progress * 4, -Math.PI / 2,
-        -Math.PI / 2 + Math.PI * 2 * progress);
-      ctx.stroke();
+    ctx.scale(breathe * (0.7 + progress * 0.3), 0.35 + progress * 0.65);
+    ctx.globalAlpha = 0.45 + progress * 0.5;
+    ctx.fillStyle = '#a9b8c8'; ctx.strokeStyle = 'rgba(215,232,239,.75)'; ctx.lineWidth = 1.3;
+    ctx.beginPath();
+    ctx.moveTo(-r, 5); ctx.quadraticCurveTo(-r - 1, -r, 0, -r - 2);
+    ctx.quadraticCurveTo(r + 1, -r, r, 5);
+    ctx.lineTo(r * .7, r); ctx.lineTo(r * .2, r * .65);
+    ctx.lineTo(-r * .25, r); ctx.lineTo(-r * .7, r * .65); ctx.closePath();
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#27313c';
+    for (const sx of [-1, 1]) {
+      ctx.beginPath(); ctx.ellipse(sx * r * .32, -r * .22, 1.5, 2.2, 0, 0, Math.PI * 2); ctx.fill();
     }
     ctx.restore();
   }
 
-  drawLens(ctx, lens) {
+  drawLens(ctx, lens, active, timeMs) {
     const r = lens.radius;
     ctx.save();
     ctx.translate(lens.x, lens.y);
     ctx.rotate(lens.angle);
-    ctx.fillStyle = 'rgba(92, 202, 235, 0.35)';
-    ctx.strokeStyle = '#9cecff';
+    const pulse = active ? 0.72 + 0.28 * Math.sin(timeMs / 100) : 0.35;
+    ctx.fillStyle = `rgba(92, 202, 235, ${pulse.toFixed(3)})`;
+    ctx.strokeStyle = active ? '#e3fbff' : '#83cbd9';
     ctx.lineWidth = 2;
     ctx.beginPath();
     ctx.ellipse(0, 0, r * 0.38, r, 0, 0, Math.PI * 2);
     ctx.fill();
     ctx.stroke();
+    if (active) {
+      ctx.strokeStyle = 'rgba(145,235,255,.45)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.ellipse(0, 0, r * .62, r + 5, 0, 0, Math.PI * 2); ctx.stroke();
+    }
     ctx.strokeStyle = 'rgba(210, 248, 255, 0.8)';
     ctx.lineWidth = 1;
     ctx.beginPath();

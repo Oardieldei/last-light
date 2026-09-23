@@ -2,12 +2,13 @@
 // Поток данных: input -> game state -> update -> render.
 // Рендер: World рисует мир, Lighting кладёт darkness-маску, HUD — DOM поверх.
 class Game {
-  constructor({ ctx, input, ui, world, lighting }) {
+  constructor({ ctx, input, ui, world, lighting, effects = null }) {
     this.ctx = ctx;
     this.input = input;
     this.ui = ui;
     this.world = world;
     this.lighting = lighting;
+    this.effects = effects;
 
     this.STATE = {
       MENU: 'MENU',
@@ -29,6 +30,9 @@ class Game {
     this.viewHeight = CONFIG.viewHeight;
     this.timeMs = 0;
     this.lastFrameTime = performance.now();
+    this.levelVisualTime = 0;
+    this.activeLenses = new Set();
+    this.playerMotion = { moving: false, walkPhase: 0 };
 
     this.onKeyDown = (e) => this.handleKey(e);
     window.addEventListener('keydown', this.onKeyDown);
@@ -47,6 +51,8 @@ class Game {
   }
 
   goToMenu() {
+    if (this.effects) this.effects.reset();
+    this.activeLenses.clear();
     this.setState(this.STATE.MENU);
     this.ui.showMenu({ onStart: () => this.startGame() });
   }
@@ -58,6 +64,11 @@ class Game {
     this.charge = CONFIG.chargeMax; // новый уровень — полный заряд
     this.batteryInventory = 0;
     this._hudSignature = '';
+    this.levelVisualTime = 0;
+    this.playerMotion.moving = false;
+    this.playerMotion.walkPhase = 0;
+    this.activeLenses.clear();
+    if (this.effects) this.effects.reset();
     this.world.setLevel(this.level);
     this.world.follow(this.player.x, this.player.y, this.viewWidth, this.viewHeight);
     this.ui.hideAll(); // прячем оверлеи (меню, результат уровня) при загрузке любого уровня
@@ -86,6 +97,7 @@ class Game {
   }
 
   finishLevel() {
+    if (this.effects) this.effects.screenFlash('#75f0b4', 0.24, 0.65);
     this.setState(this.STATE.LEVEL_COMPLETE);
     const isLast = this.levelIndex >= LEVELS.length - 1;
     this.ui.showLevelComplete({
@@ -96,6 +108,11 @@ class Game {
   }
 
   failLevel(reason) {
+    if (this.effects) {
+      const caught = reason === 'Вас поймали';
+      this.effects.burst(this.player.x, this.player.y, caught ? '#b9d5e4' : '#dc6b62', 14, 48);
+      this.effects.screenFlash(caught ? '#9bb7c7' : '#b84038', 0.25, 0.55);
+    }
     // Этап 1: травмы/ловушки. Этап 2: «Фонарь погас» (заряд 0).
     this.setState(this.STATE.LEVEL_FAILED);
     this.ui.showLevelFailed({
@@ -110,15 +127,21 @@ class Game {
         this.batteryInventory <= 0 || this.charge >= CONFIG.chargeMax) return;
     this.batteryInventory -= 1;
     this.charge = Math.min(CONFIG.chargeMax, this.charge + CONFIG.batteryChargeGain);
+    if (this.effects) {
+      this.effects.ring(this.player.x, this.player.y, '#ffe16e', 35, 0.5);
+      this.effects.burst(this.player.x, this.player.y, '#ffe16e', 7, 25);
+    }
     this._syncHUD();
   }
 
   // ---------- Обновление ----------
 
   update(dt) {
+    if (this.effects) this.effects.update(dt);
     if (this.state !== this.STATE.PLAYING) return;
     const player = this.player;
     const world = this.world;
+    if (Number.isFinite(this.levelVisualTime)) this.levelVisualTime += dt;
 
     // Взгляд: курсор мыши (без нажатия) или короткий тап.
     const mouseLook = this.input.consumeMouseLook();
@@ -156,6 +179,9 @@ class Game {
     // Заряд: расходуется ТОЛЬКО при фактическом перемещении (по dt, не по FPS).
     // Если игрок упёрся в стену и не сдвинулся — заряд не тратится.
     const moved = Math.hypot(player.x - prevX, player.y - prevY);
+    if (!this.playerMotion) this.playerMotion = { moving: false, walkPhase: 0 };
+    this.playerMotion.moving = moved > CONFIG.chargeMoveEpsilon;
+    if (this.playerMotion.moving) this.playerMotion.walkPhase += dt * 10;
     if (moved > CONFIG.chargeMoveEpsilon) {
       this.charge = Math.max(0, this.charge - dt * CONFIG.chargeDrainPerSec);
 
@@ -166,6 +192,7 @@ class Game {
             Math.hypot(player.x - battery.x, player.y - battery.y) <= CONFIG.batteryPickupRange) {
           battery.collected = true;
           this.batteryInventory += 1;
+          if (this.effects) this.effects.burst(battery.x, battery.y, '#ffe06a', 9, 34);
         }
       }
     }
@@ -175,6 +202,10 @@ class Game {
       if (!candle.active &&
           Math.hypot(player.x - candle.x, player.y - candle.y) <= CONFIG.candleActivationRadius) {
         candle.active = true;
+        if (this.effects) {
+          this.effects.ring(candle.x, candle.y, '#ffad45', 28, 0.6);
+          this.effects.burst(candle.x, candle.y, '#ffca62', 6, 22);
+        }
       }
     }
     this._syncHUD();
@@ -197,11 +228,20 @@ class Game {
     // Только реальная occluded-область направленного фонаря будит монстра.
     // После активации он продолжает преследование независимо от освещения.
     for (const monster of this.level.monsters) {
-      if (!monster.active && !monster.waking && this.lighting.isCircleInDirectionalFlashlight(
+      const startupFinished = !Number.isFinite(this.levelVisualTime) || this.levelVisualTime >= 1;
+      if (startupFinished && !monster.active && !monster.waking && this.lighting.isCircleInDirectionalFlashlight(
         this.level, player, this.charge, this.timeMs,
         monster.x, monster.y, CONFIG.monsterVisualRadius
-      )) monster.activate();
+      )) {
+        monster.activate();
+        if (this.effects) this.effects.ring(monster.x, monster.y, '#b9cfda', 34, 0.75);
+      }
+      const wasWaking = monster.waking;
       monster.update(dt, this.level, player);
+      if (wasWaking && monster.active && this.effects) {
+        this.effects.burst(monster.x, monster.y, '#d6edf3', 12, 38);
+        this.effects.ring(monster.x, monster.y, '#e5f7fa', 40, 0.6);
+      }
       if (monster.active && Math.hypot(monster.x - player.x, monster.y - player.y) <=
           monster.radius + player.radius) {
         this.failLevel('Вас поймали');
@@ -231,12 +271,48 @@ class Game {
   }
 
   render() {
-    this.world.render(this.ctx, this.player, this.viewWidth, this.viewHeight, this.timeMs);
+    const startupFinished = this.flashlightStartupBrightness() >= 1;
+    let preparedLighting = null;
+    if (this.level && this.player && startupFinished) {
+      const flashlight = this.lighting.directionalFlashlight(
+        this.level, this.player, this.charge, this.timeMs
+      );
+      const lights = this.lighting.lensSecondaryLights(
+        this.level, this.player, this.charge, this.timeMs, flashlight
+      );
+      const nextActive = new Set(lights.map((light) => light.lens));
+      preparedLighting = { flashlight, lensLights: lights };
+      if (this.effects) for (const lens of nextActive) {
+        if (!this.activeLenses.has(lens)) {
+          this.effects.ring(lens.x, lens.y, '#9cecff', 32, 0.55);
+          this.effects.burst(lens.x, lens.y, '#bcefff', 7, 24);
+        }
+      }
+      this.activeLenses = nextActive;
+    } else {
+      // Startup flashes are presentation only: lenses remain visually and
+      // logically inactive until the normal primary flashlight is available.
+      this.activeLenses.clear();
+    }
+    this.world.render(this.ctx, this.player, this.viewWidth, this.viewHeight, this.timeMs, {
+      effects: this.effects, activeLenses: this.activeLenses, playerMotion: this.playerMotion,
+    });
     // Darkness-маска поверх мира. HUD — DOM, не затемняется.
     this.lighting.render(
       this.ctx, this.level, this.player, this.world.camera,
-      this.charge, this.viewWidth, this.viewHeight, this.timeMs
+      this.charge, this.viewWidth, this.viewHeight, this.timeMs,
+      this.flashlightStartupBrightness(), startupFinished, preparedLighting
     );
+    if (this.effects) this.effects.renderOverlay(this.ctx, this.viewWidth, this.viewHeight);
+  }
+
+  // Несколько presentation-only щелчков; update не передаёт эти вспышки gameplay.
+  flashlightStartupBrightness() {
+    const t = this.levelVisualTime;
+    if (t >= 1) return 1;
+    if ((t >= 0.16 && t < 0.24) || (t >= 0.44 && t < 0.58)) return 0.72;
+    if (t >= 0.78) return (t - 0.78) / 0.22;
+    return 0;
   }
 
   // ---------- Игровой цикл ----------
