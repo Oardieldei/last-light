@@ -10,6 +10,8 @@ class UI {
     this.batteryFill = this.el('battery-fill');
     this.btnUseBattery = this.el('btn-use-battery');
     this.onUseBattery = null;
+    this.btnMute = this.el('btn-mute');
+    this.onToggleMute = null;
 
     // HUD находится поверх Canvas. Явно останавливаем pointer events, чтобы tap по
     // батарейке никогда не становился игровым взглядом или удержанием движения.
@@ -18,6 +20,12 @@ class UI {
       e.stopPropagation();
       this.btnUseBattery.blur();
       if (this.onUseBattery) this.onUseBattery();
+    });
+    this.btnMute.addEventListener('pointerdown', (e) => e.stopPropagation());
+    this.btnMute.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.btnMute.blur();
+      if (this.onToggleMute) this.setMuted(this.onToggleMute());
     });
 
     this.overlays = {
@@ -53,6 +61,17 @@ class UI {
 
   setBatteryHandler(onUseBattery) {
     this.onUseBattery = onUseBattery;
+  }
+
+  setMuteHandler(onToggleMute, muted) {
+    this.onToggleMute = onToggleMute;
+    this.setMuted(muted);
+  }
+
+  setMuted(muted) {
+    this.btnMute.textContent = muted ? '🔇' : '🔊';
+    this.btnMute.setAttribute('aria-pressed', String(muted));
+    this.btnMute.setAttribute('aria-label', muted ? 'Включить звук' : 'Выключить звук');
   }
 
   showHUD(show) {
