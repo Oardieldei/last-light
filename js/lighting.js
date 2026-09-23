@@ -312,8 +312,12 @@ class Lighting {
       const angle = lens.angle + (sign < 0 ? Math.PI : 0);
       const distance = Math.hypot(lens.x - player.x, lens.y - player.y);
       // На фактической границе primary range остаётся минимально полезный эффект;
-      // возле линзы линейная интерполяция плавно даёт максимум без порогового скачка.
-      const strength = 1 - Math.max(0, Math.min(1, distance / flashlight.range));
+      // возле линзы интерполяция плавно даёт максимум. Осевое попадание эффективнее,
+      // но даже у края широкого сектора сохраняет 65% distance-strength.
+      const distanceStrength = 1 -
+        Math.max(0, Math.min(1, distance / flashlight.range));
+      const alignment = 1 - Math.max(0, Math.min(1, axialDelta / tolerance));
+      const strength = distanceStrength * (0.65 + 0.35 * alignment);
       const minRange = Math.min(CONFIG.lensSecondaryMinRange, lens.range);
       const range = minRange + (lens.range - minRange) * strength;
       const alpha = CONFIG.lensSecondaryMinAlpha +
@@ -336,7 +340,8 @@ class Lighting {
         ),
       }));
       lights.push({
-        lens, ox, oy, angle, range, alpha, strength, layers,
+        lens, ox, oy, angle, range, alpha, strength, distanceStrength,
+        alignment, layers,
         points: layers[0].points,
       });
     }

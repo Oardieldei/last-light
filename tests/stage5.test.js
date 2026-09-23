@@ -137,6 +137,16 @@ function secondaryFor(lighting, level, player, charge = CONFIG.chargeMax) {
   assert(far.alpha >= CONFIG.lensSecondaryMinAlpha);
   assert.strictEqual(near.layers.length, 3);
   assert(near.points.length >= 2);
+
+  const offsetAngle = 55 * Math.PI / 180;
+  const offset = secondaryFor(lighting, level, {
+    x: 500 - Math.cos(offsetAngle) * 60,
+    y: 500 - Math.sin(offsetAngle) * 60,
+    lookDirection: { x: Math.cos(offsetAngle), y: Math.sin(offsetAngle) },
+  })[0];
+  assert(offset, 'a substantial 55-degree offset must remain usable');
+  assert(near.alignment > offset.alignment);
+  assert(near.range > offset.range, 'straight incidence must be strongest');
 }
 
 // Regression: the gameplay aperture must match the visibly rendered lens. At 200

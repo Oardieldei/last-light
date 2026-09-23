@@ -57,8 +57,8 @@ const CONFIG = {
   // ---------- Этап 5: линза ----------
   lensVisualRadius: 12,
   // Допустимое отклонение входящего луча от двусторонней оптической оси.
-  // ±45° оставляет широкий casual-сектор, но отсекает почти боковое попадание.
-  lensAxisToleranceDeg: 45,
+  // ±60° оставляет широкий casual-сектор, но отсекает почти боковое попадание.
+  lensAxisToleranceDeg: 60,
   // Secondary light усиливается по мере приближения игрока к линзе.
   lensSecondaryMinRange: 380,
   lensSecondaryRange: 620,
